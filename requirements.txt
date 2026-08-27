@@ -5,3 +5,4 @@ sqlalchemy
 openai
 python-dotenv
 psycopg2-binary
+mangum

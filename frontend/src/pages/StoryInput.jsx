@@ -20,7 +20,7 @@ export default function StoryInput() {
           Object.entries(clarificationsData).map(([q, a]) => `Q: ${q}\nA: ${a}`).join('\n')
         : '');
 
-      const res = await fetch('http://localhost:8000/api/generate/manual-tests', {
+      const res = await fetch('/api/generate/manual-tests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -41,7 +41,7 @@ export default function StoryInput() {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/analyze', {
+      const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, description, story_type: storyType })

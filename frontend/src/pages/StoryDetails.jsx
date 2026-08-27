@@ -23,8 +23,8 @@ export default function StoryDetails() {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      fetch(`http://localhost:8000/api/stories/${id}`).then(r => r.json()),
-      fetch(`http://localhost:8000/api/stories/${id}/test-cases`).then(r => r.json())
+      fetch(`/api/stories/${id}`).then(r => r.json()),
+      fetch(`/api/stories/${id}/test-cases`).then(r => r.json())
     ]).then(([storyData, tcData]) => {
       setStory(storyData);
       setTestCases(Array.isArray(tcData) ? tcData : []);

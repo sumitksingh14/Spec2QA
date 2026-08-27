@@ -8,7 +8,7 @@ export default function Dashboard() {
   const [deleting, setDeleting] = useState(false);
 
   const fetchStories = () => {
-    fetch('http://localhost:8000/api/stories')
+    fetch('/api/stories')
       .then(res => res.json())
       .then(data => setStories(data))
       .catch(err => console.error(err));
@@ -20,7 +20,7 @@ export default function Dashboard() {
     if (!confirmDelete) return;
     setDeleting(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/stories/${confirmDelete.id}`, {
+      const res = await fetch(`/api/stories/${confirmDelete.id}`, {
         method: 'DELETE',
       });
       if (res.ok || res.status === 204) {

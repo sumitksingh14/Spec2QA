@@ -1,28 +1,24 @@
-"""
-Vercel Python serverless entry point for Spec2QA.
-
-The modern Vercel Python runtime (using `functions` in vercel.json) discovers
-a top-level ASGI callable named `app`, `application`, or `handler`.
-We expose `app` unconditionally so static analysis always finds it.
-"""
+from __future__ import annotations
 
 import sys
 import os
 import json
 import traceback
+from typing import Optional, Dict, Any
 
 # ---------------------------------------------------------------------------
 # Make backend/ importable at runtime.
 # Vercel bundles backend/** into the function package via includeFiles.
 # ---------------------------------------------------------------------------
 _backend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'backend')
-sys.path.insert(0, _backend_dir)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
 
 # ---------------------------------------------------------------------------
 # Build the real ASGI app (Mangum-wrapped FastAPI).
 # Any import/startup errors are captured and returned as a JSON 500.
 # ---------------------------------------------------------------------------
-_startup_error: dict | None = None
+_startup_error: Optional[Dict[str, Any]] = None
 _real_app = None
 
 try:
@@ -48,16 +44,16 @@ async def app(scope, receive, send):
         return
 
     # Startup failed — return structured JSON error for diagnosis.
-    if scope["type"] != "http":
+    if scope.get("type") != "http":
         return
 
-    body = json.dumps(_startup_error, indent=2).encode()
+    body = json.dumps(_startup_error or {"error": "Unknown server startup error"}, indent=2).encode("utf-8")
     await send({
         "type": "http.response.start",
         "status": 500,
         "headers": [
             [b"content-type", b"application/json"],
-            [b"content-length", str(len(body)).encode()],
+            [b"content-length", str(len(body)).encode("utf-8")],
         ],
     })
     await send({"type": "http.response.body", "body": body})

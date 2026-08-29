@@ -91,8 +91,8 @@ _PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
     ),
     "groq": ProviderConfig(
         name="groq",
-        model_id="qwen/qwen3.8-27b",
-        max_tokens=8192,
+        model_id="openai/gpt-oss-20b",
+        max_tokens=4096,
     ),
     # Draft mode — fast preview via groq smaller model
     "draft": ProviderConfig(

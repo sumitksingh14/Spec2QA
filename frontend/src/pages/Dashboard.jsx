@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { LayoutList, FileText, Activity, Trash2, X, AlertTriangle } from 'lucide-react';
+import { FileText, ArrowRight, Trash2, X, AlertTriangle, Cpu, TestTube } from 'lucide-react';
 
 export default function Dashboard() {
   const [stories, setStories] = useState([]);
-  const [confirmDelete, setConfirmDelete] = useState(null); // story object to confirm delete
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
   const fetchStories = () => {
     fetch('/api/stories')
       .then(res => res.json())
-      .then(data => setStories(data))
+      .then(data => setStories(Array.isArray(data) ? data : []))
       .catch(err => console.error(err));
   };
 
@@ -20,67 +20,49 @@ export default function Dashboard() {
     if (!confirmDelete) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/stories/${confirmDelete.id}`, {
-        method: 'DELETE',
-      });
+      const res = await fetch(`/api/stories/${confirmDelete.id}`, { method: 'DELETE' });
       if (res.ok || res.status === 204) {
         setStories(prev => prev.filter(s => s.id !== confirmDelete.id));
         setConfirmDelete(null);
-      } else {
-        alert('Failed to delete story. Please try again.');
       }
     } catch (err) {
       console.error(err);
-      alert('Error deleting story.');
     } finally {
       setDeleting(false);
     }
   };
 
+  const totalStories = stories.length;
+  const recentStories = stories.slice(0, 5);
+
   return (
-    <div className="dashboard">
-      {/* Confirmation Modal */}
+    <>
+      {/* ── Delete confirm modal ─────────────────────────────── */}
       {confirmDelete && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 200,
-          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '1rem',
-        }}>
-          <div className="glass-panel" style={{
-            maxWidth: '420px', width: '100%', padding: '2rem',
-            border: '1px solid rgba(239, 68, 68, 0.25)',
-            animation: 'fadeInScale 0.15s ease',
-          }}>
+        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+          <div className="modal-panel" style={{ maxWidth: '420px', width: '100%', padding: '2rem' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', alignItems: 'flex-start' }}>
-              <div style={{
-                padding: '0.6rem', borderRadius: '10px',
-                background: 'rgba(239, 68, 68, 0.15)', color: '#f87171', flexShrink: 0
-              }}>
-                <AlertTriangle size={22} />
+              <div style={{ padding: '0.5rem', borderRadius: 'var(--radius-sm)', background: 'var(--red-bg)', color: 'var(--red)', flexShrink: 0 }}>
+                <AlertTriangle size={20} />
               </div>
               <div>
-                <h3 style={{ marginBottom: '0.4rem' }}>Delete Story?</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', lineHeight: 1.5 }}>
-                  This will permanently delete <strong style={{ color: 'var(--text-primary)' }}>"{confirmDelete.title}"</strong> and all its generated test cases. This action cannot be undone.
+                <h3 style={{ marginBottom: '0.4rem', fontSize: '1rem' }}>Delete Story?</h3>
+                <p style={{ fontSize: '0.875rem', lineHeight: 1.6 }}>
+                  This will permanently delete <strong style={{ color: 'var(--text-primary)' }}>"{confirmDelete.title}"</strong> and all its generated test cases.
                 </p>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setConfirmDelete(null)}
-                disabled={deleting}
-              >
-                <X size={15} /> Cancel
+              <button className="btn btn-secondary" onClick={() => setConfirmDelete(null)} disabled={deleting}>
+                <X size={14} /> Cancel
               </button>
               <button
                 className="btn"
                 onClick={handleDeleteConfirm}
                 disabled={deleting}
-                style={{ background: '#dc2626', color: 'white' }}
+                style={{ background: 'var(--red)', color: 'white', border: '1px solid var(--red)' }}
               >
-                <Trash2 size={15} />
+                <Trash2 size={14} />
                 {deleting ? 'Deleting…' : 'Delete'}
               </button>
             </div>
@@ -88,44 +70,69 @@ export default function Dashboard() {
         </div>
       )}
 
-      <h1 style={{ marginBottom: '2rem' }}>Dashboard</h1>
-
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem', marginBottom: '3rem' }}>
-        <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ padding: '1rem', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '12px', color: '#3b82f6' }}>
-            <FileText size={24} />
-          </div>
-          <div>
-            <h3 style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Total Stories</h3>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{stories.length || 0}</p>
-          </div>
+      {/* ── Hero banner ─────────────────────────────────────── */}
+      <div className="dashboard-hero">
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0.75rem', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg-card)', marginBottom: '1.5rem' }}>
+          <Cpu size={12} style={{ color: 'var(--blue)' }} />
+          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>AI-Powered QA</span>
         </div>
-        <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ padding: '1rem', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '12px', color: '#10b981' }}>
-            <LayoutList size={24} />
-          </div>
-          <div>
-            <h3 style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Test Cases Generated</h3>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>-</p>
-          </div>
+        <h1>Test Coverage,<br /><span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>Automated.</span></h1>
+        <p style={{ fontSize: '1.05rem', color: 'var(--text-secondary)', marginTop: '1rem', marginBottom: '2rem', maxWidth: '480px', margin: '1rem auto 2rem' }}>
+          Paste your user story and get a comprehensive, structured test suite in seconds.
+        </p>
+        <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Link to="/new-story" className="btn btn-primary" style={{ padding: '0.7rem 1.5rem', fontSize: '0.9rem', borderRadius: 'var(--radius-pill)' }}>
+            Analyze a Story <ArrowRight size={15} />
+          </Link>
+          <Link to="/admin" className="btn btn-secondary" style={{ padding: '0.7rem 1.5rem', fontSize: '0.9rem', borderRadius: 'var(--radius-pill)' }}>
+            View Metrics
+          </Link>
         </div>
       </div>
 
-      {/* Recent Stories Table */}
-      <div className="glass-panel" style={{ padding: '2rem' }}>
-        <h2 style={{ marginBottom: '1.5rem' }}>Recent Stories</h2>
+      {/* ── Stat cards ──────────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2.5rem' }}>
+        <div className="stat-card">
+          <p className="stat-num">{totalStories}</p>
+          <p className="stat-label">Stories Analyzed</p>
+        </div>
+        <div className="stat-card">
+          <p className="stat-num">25</p>
+          <p className="stat-label">Max Cases / Story</p>
+        </div>
+        <div className="stat-card">
+          <p className="stat-num">5</p>
+          <p className="stat-label">Test Categories</p>
+        </div>
+        <div className="stat-card">
+          <p className="stat-num">2</p>
+          <p className="stat-label">LLM Providers</p>
+        </div>
+      </div>
+
+      {/* ── Recent Stories table ─────────────────────────────── */}
+      <div className="glass-panel">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Recent Stories</h2>
+          <Link to="/new-story" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.35rem 0.85rem' }}>
+            <FileText size={13} /> New Story
+          </Link>
+        </div>
+
         {stories.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-            <Activity size={48} style={{ margin: '0 auto 1rem', opacity: 0.5 }} />
-            <p>No stories analyzed yet.</p>
-            <Link to="/new-story" className="btn btn-primary" style={{ marginTop: '1rem' }}>Analyze a Story</Link>
+          <div className="empty-state">
+            <TestTube size={40} />
+            <h3>No stories yet</h3>
+            <p style={{ fontSize: '0.875rem', marginBottom: '1.5rem' }}>Analyze your first user story to generate test cases.</p>
+            <Link to="/new-story" className="btn btn-primary" style={{ borderRadius: 'var(--radius-pill)' }}>
+              Analyze a Story <ArrowRight size={14} />
+            </Link>
           </div>
         ) : (
           <table className="data-grid">
             <thead>
               <tr>
-                <th>Title</th>
+                <th>Story Name</th>
                 <th>Type</th>
                 <th>Date</th>
                 <th>Actions</th>
@@ -134,35 +141,43 @@ export default function Dashboard() {
             <tbody>
               {stories.map(story => (
                 <tr key={story.id}>
-                  <td style={{ fontWeight: 500 }}>{story.title}</td>
-                  <td><span className="badge badge-functional">{story.story_type || 'Unknown'}</span></td>
-                  <td style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-                    {new Date(story.created_at).toLocaleDateString()}
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <div style={{ width: '34px', height: '34px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-surface)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <FileText size={15} style={{ color: 'var(--text-secondary)' }} />
+                      </div>
+                      <div>
+                        <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem', lineHeight: 1.3 }}>{story.title}</p>
+                        {story.version > 1 && (
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', fontWeight: 600 }}>v{story.version}</span>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span className="chip">{story.story_type || 'General'}</span>
+                  </td>
+                  <td style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                    {new Date(story.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                       <Link
                         to={`/story/${story.id}`}
                         className="btn btn-secondary"
-                        style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                        style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem' }}
                       >
-                        View
+                        View <ArrowRight size={12} />
                       </Link>
                       <button
-                        className="btn"
+                        className="btn btn-ghost"
                         title="Delete story"
                         onClick={() => setConfirmDelete(story)}
-                        style={{
-                          fontSize: '0.75rem', padding: '0.3rem 0.6rem',
-                          background: 'rgba(239, 68, 68, 0.1)',
-                          color: '#f87171',
-                          border: '1px solid rgba(239, 68, 68, 0.2)',
-                          transition: 'all 0.2s',
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
+                        style={{ padding: '0.35rem 0.5rem', color: 'var(--text-tertiary)' }}
+                        onMouseEnter={e => e.currentTarget.style.color = 'var(--red)'}
+                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-tertiary)'}
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </td>
@@ -172,6 +187,6 @@ export default function Dashboard() {
           </table>
         )}
       </div>
-    </div>
+    </>
   );
 }

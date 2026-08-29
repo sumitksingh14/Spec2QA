@@ -1,8 +1,8 @@
 """
 Vercel Python serverless entry point for Spec2QA.
 
-Imports are guarded so that startup errors are surfaced as readable JSON
-rather than opaque FUNCTION_INVOCATION_FAILED responses.
+`handler` MUST be a top-level name so @vercel/python can find it.
+We import lazily inside the function so startup errors surface as JSON.
 """
 
 import sys
@@ -13,39 +13,44 @@ import traceback
 # Make backend/ importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-_STARTUP_ERROR = None
+# Try to build the real Mangum handler at module load
+_startup_error: dict | None = None
+_mangum_handler = None
 
 try:
-    from main import app  # noqa: F401
+    from main import app          # noqa: F401  (resolved via sys.path above)
     from mangum import Mangum
-
-    handler = Mangum(app, lifespan="off")
-
+    _mangum_handler = Mangum(app, lifespan="off")
 except Exception as _exc:
-    _STARTUP_ERROR = {
-        "error": str(_exc),
+    _startup_error = {
+        "startup_error": str(_exc),
         "traceback": traceback.format_exc(),
         "python": sys.version,
-        "path": sys.path,
-        "cwd": os.getcwd(),
-        "files": os.listdir(os.path.dirname(__file__)),
-        "backend_files": (
-            os.listdir(os.path.join(os.path.dirname(__file__), '..', 'backend'))
-            if os.path.isdir(os.path.join(os.path.dirname(__file__), '..', 'backend'))
-            else "backend/ not found"
+        "sys_path": sys.path,
+        "api_dir": os.listdir(os.path.dirname(os.path.abspath(__file__))),
+        "backend_exists": os.path.isdir(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'backend')
         ),
     }
 
-    # Pure-stdlib WSGI/ASGI fallback — no fastapi/mangum needed
-    async def handler(scope, receive, send):  # type: ignore[misc]
-        if scope["type"] == "http":
-            body = json.dumps(_STARTUP_ERROR, indent=2).encode()
-            await send({
-                "type": "http.response.start",
-                "status": 500,
-                "headers": [
-                    [b"content-type", b"application/json"],
-                    [b"content-length", str(len(body)).encode()],
-                ],
-            })
-            await send({"type": "http.response.body", "body": body})
+
+# Top-level `handler` — always present so @vercel/python can find it
+async def handler(scope, receive, send):
+    """ASGI entry point called by Vercel for every request."""
+    if _mangum_handler is not None:
+        # Happy path — delegate to real Mangum/FastAPI handler
+        await _mangum_handler(scope, receive, send)
+        return
+
+    # Startup failed — return the full diagnostic JSON
+    if scope["type"] == "http":
+        body = json.dumps(_startup_error, indent=2).encode()
+        await send({
+            "type": "http.response.start",
+            "status": 500,
+            "headers": [
+                [b"content-type", b"application/json"],
+                [b"content-length", str(len(body)).encode()],
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})

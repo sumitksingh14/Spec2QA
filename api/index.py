@@ -2,8 +2,8 @@
 Vercel Python serverless entry point for Spec2QA.
 
 `handler` MUST be a top-level name so @vercel/python can find it.
-We import lazily inside the function so startup errors surface as JSON.
 """
+from __future__ import annotations  # enables dict | None on Python 3.9
 
 import sys
 import os
@@ -13,8 +13,7 @@ import traceback
 # Make backend/ importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-# Try to build the real Mangum handler at module load
-_startup_error: dict | None = None
+_startup_error = None   # type: dict | None
 _mangum_handler = None
 
 try:
@@ -34,15 +33,12 @@ except Exception as _exc:
     }
 
 
-# Top-level `handler` — always present so @vercel/python can find it
 async def handler(scope, receive, send):
-    """ASGI entry point called by Vercel for every request."""
+    """Top-level ASGI entry point — always present for @vercel/python."""
     if _mangum_handler is not None:
-        # Happy path — delegate to real Mangum/FastAPI handler
         await _mangum_handler(scope, receive, send)
         return
 
-    # Startup failed — return the full diagnostic JSON
     if scope["type"] == "http":
         body = json.dumps(_startup_error, indent=2).encode()
         await send({

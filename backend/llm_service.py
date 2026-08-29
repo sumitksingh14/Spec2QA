@@ -239,7 +239,7 @@ def _parse_json_from_response(raw: str):
     """
     Robustly extract JSON from a model response that may include
     thinking blocks (<think>...</think>), markdown fences (```json ... ```),
-    or plain JSON text.
+    or plain JSON text. Handles truncated JSON arrays gracefully.
     """
     text = raw.strip()
     # Strip <think>...</think> if present
@@ -261,10 +261,28 @@ def _parse_json_from_response(raw: str):
         [text.rfind("}"), text.rfind("]")],
         default=-1
     )
+    candidate_text = text
     if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
-        text = text[first_bracket:last_bracket + 1]
+        candidate_text = text[first_bracket:last_bracket + 1]
 
-    return json.loads(text)
+    try:
+        return json.loads(candidate_text)
+    except json.JSONDecodeError:
+        # If truncated JSON array, recover all valid complete JSON objects inside it
+        if "[" in text:
+            objs = []
+            for match in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, flags=re.DOTALL):
+                try:
+                    obj = json.loads(match.group(0))
+                    if isinstance(obj, dict):
+                        objs.append(obj)
+                except Exception:
+                    pass
+            if objs:
+                print(f"[llm_service] Recovered {len(objs)} items from truncated JSON response.")
+                return objs
+
+        return json.loads(candidate_text)
 
 
 # ---------------------------------------------------------------------------
@@ -290,18 +308,22 @@ def analyze_story(story_text: str) -> Dict[str, Any]:
             "Use exactly this schema:\n"
             '{"questions": ["<clarifying question>"], '
             '"missing_elements": ["<missing element>"], '
-            '"extracted_entities": {"actors": [], "actions": [], "data_entities": []}}'
+            '"extracted_entities": {"actors": [...], "actions": [...], "data_entities": [...]}}\n'
         )
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"User Story:\n{story_text}"},
+            {"role": "user", "content": f"Analyze this user story:\n\n{story_text}"},
         ]
-        raw = ""
         try:
             raw = _stream_response(client, provider, messages, temperature=0.4)
-            return _parse_json_from_response(raw)
+            data = _parse_json_from_response(raw)
+            return {
+                "questions": data.get("questions", []),
+                "missing_elements": data.get("missing_elements", []),
+                "extracted_entities": data.get("extracted_entities", {}),
+            }
         except Exception as e:
-            print(f"[llm_service] analyze_story error: {e}\nRaw response: {raw!r}")
+            print(f"[llm_service] analyze_story error: {e}")
 
     return {
         "questions": [],
@@ -365,23 +387,17 @@ def _extract_testable_behaviors(
 
     system_prompt = (
         "You are a senior QA Architect. Read the user story carefully and enumerate "
-        "EVERY distinct testable behavior, acceptance criterion, business rule, "
-        "constraint, error condition, and edge case you can identify.\n\n"
-        "Think exhaustively. Consider:\n"
-        "  - Each acceptance criterion as its own behavior\n"
-        "  - All stated and implied error/failure paths\n"
-        "  - Data validation rules (type, length, format, range, required)\n"
-        "  - Authentication and authorisation rules\n"
-        "  - Race conditions and concurrency scenarios\n"
-        "  - Network/timeout/latency edge cases\n"
-        "  - Security attack surfaces (injection, CSRF, token replay, enumeration)\n"
-        "  - Accessibility requirements (keyboard, screen reader, contrast, focus)\n"
-        "  - Implicit non-functional requirements: input validation limits, "
-        "localization/i18n if user-facing text is involved, error-message correctness\n"
-        "  - Cross-browser/device considerations if relevant\n"
-        "  - Regression impact on adjacent features\n"
-        + exclusion_block
-        + "\nFor each behavior, classify its SOURCE as one of:\n"
+        "distinct, high-value testable behaviors, acceptance criteria, business rules, "
+        "constraints, error conditions, and edge cases. Aim for 20 to 35 concise, unique behaviors total. "
+        "Do NOT generate repetitive or near-duplicate variations.\n\n"
+        "Consider:\n"
+        "  - Stated acceptance criteria\n"
+        "  - Error and failure paths\n"
+        "  - Data validation rules (format, length, required)\n"
+        "  - Security and authentication constraints\n"
+        "  - Key accessibility and UX requirements\n"
+        + exclusion_block +
+        "\nFor each behavior, classify its SOURCE as one of:\n"
         '  "explicit_ac"          — directly stated as an Acceptance Criterion\n'
         '  "explicit_description" — clearly mentioned in the story description body\n'
         '  "inferred"             — implied but not explicitly written\n\n'
@@ -441,9 +457,13 @@ def _verify_extraction_completeness(
     if not behaviors:
         return behaviors
 
+    # Compact behavior list and story text to keep token count under 2k
+    selected_behaviors = behaviors[:25]
     behavior_list_text = "\n".join(
-        f"  {b['id']}. [{b['source']}] {b['description']}" for b in behaviors
+        f"  {b['id']}. [{b['source']}] {b['description'][:100]}" for b in selected_behaviors
     )
+    compact_story = story_text[:1500] if len(story_text) > 1500 else story_text
+
     system_prompt = (
         "You are a senior QA Architect performing a coverage audit.\n\n"
         "You will be given:\n"
@@ -464,7 +484,7 @@ def _verify_extraction_completeness(
         'Schema: ["<gap description 1>", "<gap description 2>", ...]'
     )
     user_content = (
-        f"User Story:\n{story_text}\n\n"
+        f"User Story:\n{compact_story}\n\n"
         f"Already-extracted behaviors:\n{behavior_list_text}"
     )
     messages = [
@@ -493,17 +513,6 @@ def _verify_extraction_completeness(
             print(f"[llm_service] Pass 1b gap-fill: appended {len(appended)} missing behaviors.")
         return behaviors + appended
     except Exception as e:
-        print(f"[llm_service] _verify_extraction_completeness error: {e}\nRaw: {raw!r}")
-        return behaviors
-
-
-# ---------------------------------------------------------------------------
-# §2 — Category applicability classifier (pure Python, no LLM)
-# ---------------------------------------------------------------------------
-
-_SECURITY_KEYWORDS = {
-    "auth", "authentication", "authorization", "login", "logout", "password",
-    "token", "permission", "role", "admin", "payment", "pii", "personal data",
     "csrf", "injection", "encrypt", "credential", "2fa", "mfa", "otp", "session",
     "privilege", "access control", "api key", "secret",
 }
@@ -648,10 +657,14 @@ def _generate_cases_for_behaviors(
     metrics: Optional[Dict] = None,
 ) -> list:
     """Pass 2 — Generate test cases proportionally across applicable categories."""
+    # Cap behaviors in Pass 2 prompt to top 30 to stay well under TPM token limits
+    selected_behaviors = behaviors[:30]
     behaviors_block = "\n".join(
-        f"  [{b['id']}] [{b['risk_weight'].upper()}] [{b['source']}] {b['description']}"
-        for b in behaviors
+        f"  [{b['id']}] [{b['risk_weight'].upper()}] {b['description'][:150]}"
+        for b in selected_behaviors
     )
+    compact_story = story_text[:2500] if len(story_text) > 2500 else story_text
+
     applicable_categories = [c for c, s in applicability.items() if s["applicable"]]
     category_budget_block = "\n".join(
         f"  - {cat}: {allocation.get(cat, 0)} cases"
@@ -666,7 +679,7 @@ def _generate_cases_for_behaviors(
 
     system_prompt = (
         "You are a principal QA Lead with expertise in comprehensive test design. "
-        "You are given a user story and a list of every testable behavior extracted from it.\n\n"
+        "You are given a user story and a list of key testable behaviors.\n\n"
         "YOUR TASK: Generate the FULL set of manual test cases within the EXACT slot budget below.\n\n"
         f"SLOT BUDGET (must not exceed):\n{category_budget_block}\n\n"
         + (f"SKIPPED CATEGORIES (do NOT generate for these):\n{skipped_block}\n\n" if skipped_block else "")
@@ -694,8 +707,8 @@ def _generate_cases_for_behaviors(
         '"covers_behavior_id": <integer>}'
     )
     user_content = (
-        f"User Story:\n{story_text}\n\n"
-        f"Testable Behaviors to cover (ID, risk, source, description):\n{behaviors_block}"
+        f"User Story:\n{compact_story}\n\n"
+        f"Testable Behaviors to cover (ID, risk, description):\n{behaviors_block}"
     )
     messages = [
         {"role": "system", "content": system_prompt},
@@ -703,7 +716,7 @@ def _generate_cases_for_behaviors(
     ]
     raw = ""
     try:
-        raw = _stream_response(client, provider, messages, temperature=0.6, metrics=metrics)
+        raw = _stream_response(client, provider, messages, temperature=0.5, metrics=metrics)
         result = _parse_json_from_response(raw)
         if isinstance(result, list) and len(result) > 0:
             return result

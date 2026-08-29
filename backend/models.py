@@ -10,10 +10,16 @@ class Story(database.Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     description = Column(Text)
-    story_type = Column(String, nullable=True) # UI, API, etc.
+    story_type = Column(String, nullable=True)  # UI, API, etc.
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     clarified_description = Column(Text, nullable=True)
-    
+
+    # v2 pipeline: stores JSON blob of uncovered_behaviors, category_allocation,
+    # skipped_categories, generation_meta so StoryDetails can show them on reload.
+    # Neon Postgres: run `ALTER TABLE stories ADD COLUMN generation_meta_json TEXT;`
+    # if the column doesn't exist yet (SQLite will get it automatically via create_all).
+    generation_meta_json = Column(Text, nullable=True)
+
     acceptance_criteria = relationship("AcceptanceCriterion", back_populates="story", cascade="all, delete-orphan")
     test_cases = relationship("TestCase", back_populates="story", cascade="all, delete-orphan")
 

@@ -1,47 +1,58 @@
 import os
 import ssl
-import urllib.parse as _urlparse
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:////tmp/storytotest.db")
 
-# Heroku / older Postgres URLs use postgres:// — SQLAlchemy needs postgresql://
-if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
-    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
 connect_args = {}
 
-# Use pg8000 (pure-Python, no pg_config needed) when connecting to Postgres
-if SQLALCHEMY_DATABASE_URL.startswith("postgresql://") or SQLALCHEMY_DATABASE_URL.startswith("postgresql+"):
-    if "+" not in SQLALCHEMY_DATABASE_URL.split("://")[0]:
-        SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+# Convert Postgres URLs to pg8000 and strip unsupported query params (sslmode, channel_binding)
+if SQLALCHEMY_DATABASE_URL.startswith("postgres://") or SQLALCHEMY_DATABASE_URL.startswith("postgresql://") or SQLALCHEMY_DATABASE_URL.startswith("postgresql+"):
+    url_obj = make_url(SQLALCHEMY_DATABASE_URL)
+    engine_url = url_obj.set(drivername="postgresql+pg8000", query={})
 
-    # pg8000 expects SSL via ssl_context parameter rather than unsupported query string parameters
-    _parsed = _urlparse.urlparse(SQLALCHEMY_DATABASE_URL)
-    _qs = _urlparse.parse_qs(_parsed.query, keep_blank_values=True)
-    ssl_requested = "sslmode" in _qs or "ssl" in _qs or "neon.tech" in SQLALCHEMY_DATABASE_URL
-    _qs.pop("sslmode", None)
-    _qs.pop("channel_binding", None)
-    _qs.pop("ssl", None)
-
-    SQLALCHEMY_DATABASE_URL = _urlparse.urlunparse(
-        _parsed._replace(query=_urlparse.urlencode(_qs, doseq=True))
-    )
-
-    if ssl_requested:
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
-        connect_args["ssl_context"] = ssl_ctx
+    # Neon and cloud Postgres instances require SSL via ssl_context
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    connect_args["ssl_context"] = ssl_ctx
 
 elif SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+    engine_url = SQLALCHEMY_DATABASE_URL
     connect_args["check_same_thread"] = False
+else:
+    engine_url = SQLALCHEMY_DATABASE_URL
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=connect_args)
+engine = create_engine(engine_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
+
+def init_db():
+    Base.metadata.create_all(bind=engine)
+    try:
+        with engine.connect() as conn:
+            migration_cols = [
+                ("stories", "clarified_description", "TEXT"),
+                ("stories", "generation_meta_json", "TEXT"),
+                ("stories", "excluded_ac_ids_json", "TEXT"),
+                ("stories", "content_hash", "VARCHAR(64)"),
+                ("stories", "version", "INTEGER DEFAULT 1"),
+                ("test_cases", "behavior_context_json", "TEXT"),
+                ("test_cases", "run_id", "INTEGER"),
+                ("test_cases", "approval_status", "VARCHAR(32) DEFAULT 'Draft'"),
+                ("test_cases", "assigned_to", "VARCHAR(255)"),
+            ]
+            for table, col, col_type in migration_cols:
+                try:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {col_type}"))
+                    conn.commit()
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[database] Note on schema auto-migration: {e}")
 
 def get_db():
     db = SessionLocal()

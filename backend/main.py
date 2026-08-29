@@ -77,8 +77,8 @@ import schemas
 import database
 import llm_service
 
-# Create DB tables (SQLite auto-migrate; Postgres needs manual ALTER TABLE for new cols)
-database.Base.metadata.create_all(bind=database.engine)
+# Create DB tables & auto-migrate missing columns
+database.init_db()
 
 app = FastAPI(title="Spec2QA API")
 

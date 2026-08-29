@@ -40,8 +40,25 @@ except Exception as _exc:
 async def app(scope, receive, send):
     """Top-level ASGI entry point — always present, always at module level."""
     if _real_app is not None:
-        await _real_app(scope, receive, send)  # type: ignore[misc]
-        return
+        try:
+            await _real_app(scope, receive, send)  # type: ignore[misc]
+            return
+        except Exception as _runtime_exc:
+            if scope.get("type") == "http":
+                body = json.dumps({
+                    "runtime_error": str(_runtime_exc),
+                    "traceback": traceback.format_exc(),
+                }, indent=2).encode("utf-8")
+                await send({
+                    "type": "http.response.start",
+                    "status": 500,
+                    "headers": [
+                        [b"content-type", b"application/json"],
+                        [b"content-length", str(len(body)).encode("utf-8")],
+                    ],
+                })
+                await send({"type": "http.response.body", "body": body})
+                return
 
     # Startup failed — return structured JSON error for diagnosis.
     if scope.get("type") != "http":

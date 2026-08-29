@@ -77,10 +77,18 @@ import schemas
 import database
 import llm_service
 
-# Create DB tables & auto-migrate missing columns
-database.init_db()
-
 app = FastAPI(title="Spec2QA API")
+
+_db_initialized = False
+
+def _ensure_db():
+    global _db_initialized
+    if not _db_initialized:
+        _db_initialized = True
+        try:
+            database.init_db()
+        except Exception as e:
+            print(f"[main] database.init_db error: {e}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -173,11 +181,18 @@ def generate_tests(
         db_story.excluded_ac_ids_json = json.dumps(request.excluded_ac_ids)
 
     # Call LLM pipeline
-    generation_result = llm_service.generate_test_cases(
-        story_text,
-        provider_override=request.llm_provider,
-        excluded_ac_ids=request.excluded_ac_ids or [],
-    )
+    try:
+        generation_result = llm_service.generate_test_cases(
+            story_text,
+            provider_override=request.llm_provider,
+            excluded_ac_ids=request.excluded_ac_ids or [],
+        )
+    except Exception as e:
+        import traceback
+        raise HTTPException(
+            status_code=500,
+            detail=f"Test Generation Failed: {str(e)} -- Traceback: {traceback.format_exc()}"
+        )
 
     test_cases_data = generation_result["test_cases"]
     uncovered_behaviors = generation_result.get("uncovered_behaviors", [])

@@ -511,11 +511,11 @@ def _verify_extraction_completeness(
                 next_id += 1
         if appended:
             print(f"[llm_service] Pass 1b gap-fill: appended {len(appended)} missing behaviors.")
-        return behaviors + appended
     except Exception as e:
-    "csrf", "injection", "encrypt", "credential", "2fa", "mfa", "otp", "session",
-    "privilege", "access control", "api key", "secret",
-}
+        print(f"[llm_service] _verify_extraction_completeness error: {e}")
+        return behaviors
+
+
 _ACCESSIBILITY_KEYWORDS = {
     "button", "form", "input", "label", "image", "img", "modal", "dialog",
     "screen reader", "keyboard", "focus", "aria", "wcag", "contrast", "ui",

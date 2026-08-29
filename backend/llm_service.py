@@ -1086,10 +1086,11 @@ def generate_test_cases(
 
     print(f"[llm_service] Pass 1: {len(behaviors)} behaviors extracted.")
 
-    # ── Pass 1b: Self-verification gap-fill ───────────────────────────────
-    print("[llm_service] Pass 1b: self-verification completeness check…")
-    behaviors = _verify_extraction_completeness(client, provider, story_text, behaviors, metrics=metrics)
-    print(f"[llm_service] Pass 1b complete: {len(behaviors)} behaviors total.")
+    # ── Pass 1b: Self-verification gap-fill (only run if Pass 1 found < 6 behaviors) ─
+    if len(behaviors) < 6:
+        print("[llm_service] Pass 1b: self-verification completeness check…")
+        behaviors = _verify_extraction_completeness(client, provider, story_text, behaviors, metrics=metrics)
+        print(f"[llm_service] Pass 1b complete: {len(behaviors)} behaviors total.")
 
     # ── §2: Category applicability ─────────────────────────────────────────
     applicability = _classify_category_applicability(behaviors, story_text)

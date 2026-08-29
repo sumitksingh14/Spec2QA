@@ -54,6 +54,7 @@ class TestCase(TestCaseBase):
 class GenerateTestCasesRequest(BaseModel):
     story_id: int
     clarified_description: Optional[str] = None
+    llm_provider: Optional[str] = None
 
 # ---------------------------------------------------------------------------
 # §3 / §1 / §5 — New additive response schemas

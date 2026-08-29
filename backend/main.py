@@ -46,7 +46,10 @@ def generate_tests(request: schemas.GenerateTestCasesRequest, db: Session = Depe
         db_story.clarified_description = request.clarified_description
 
     # Generate test cases using enhanced two-pass LLM pipeline (v2)
-    generation_result = llm_service.generate_test_cases(story_text)
+    generation_result = llm_service.generate_test_cases(
+        story_text, 
+        provider_override=request.llm_provider
+    )
 
     test_cases_data = generation_result["test_cases"]
     uncovered_behaviors = generation_result.get("uncovered_behaviors", [])

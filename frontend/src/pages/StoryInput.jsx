@@ -6,6 +6,7 @@ export default function StoryInput() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [storyType, setStoryType] = useState('Web UI');
+  const [llmProvider, setLlmProvider] = useState('groq');
   const [loading, setLoading] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [storyId, setStoryId] = useState(null);
@@ -25,7 +26,8 @@ export default function StoryInput() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           story_id: id,
-          clarified_description: clarifiedDesc
+          clarified_description: clarifiedDesc,
+          llm_provider: llmProvider
         })
       });
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -93,15 +95,25 @@ export default function StoryInput() {
             />
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Application Type</label>
-            <select className="form-input" value={storyType} onChange={e => setStoryType(e.target.value)}>
-              <option value="Web UI">Web UI</option>
-              <option value="API Endpoint">API Endpoint</option>
-              <option value="Mobile Feature">Mobile Feature</option>
-              <option value="Background Job">Background Job</option>
-              <option value="Desktop App">Desktop App</option>
-            </select>
+          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">Application Type</label>
+              <select className="form-input" value={storyType} onChange={e => setStoryType(e.target.value)}>
+                <option value="Web UI">Web UI</option>
+                <option value="API Endpoint">API Endpoint</option>
+                <option value="Mobile Feature">Mobile Feature</option>
+                <option value="Background Job">Background Job</option>
+                <option value="Desktop App">Desktop App</option>
+              </select>
+            </div>
+            
+            <div className="form-group" style={{ flex: 1 }}>
+              <label className="form-label">LLM Provider</label>
+              <select className="form-input" value={llmProvider} onChange={e => setLlmProvider(e.target.value)}>
+                <option value="groq">Groq (Llama-3.3-70b)</option>
+                <option value="nvidia">Nvidia (Nemotron-3)</option>
+              </select>
+            </div>
           </div>
 
           <div className="form-group">

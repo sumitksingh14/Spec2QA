@@ -87,9 +87,9 @@ class CategoryStatus(TypedDict):
 # LLM client helpers  (unchanged from v1)
 # ---------------------------------------------------------------------------
 
-def _get_client() -> Any:
-    """Return an LLM client based on LLM_PROVIDER."""
-    if LLM_PROVIDER == "nvidia":
+def _get_client(provider: str) -> Any:
+    """Return an LLM client based on the given provider."""
+    if provider == "nvidia":
         if not NVIDIA_API_KEY:
             print("[llm_service] NVIDIA_API_KEY not set — AI generation unavailable.")
             return None
@@ -103,6 +103,7 @@ def _get_client() -> Any:
 
 def _stream_response(
     client: Any,
+    provider: str,
     messages: list,
     temperature: float = 0.6,
     max_retries: int = 3,
@@ -122,10 +123,12 @@ def _stream_response(
                 "top_p": 0.95,
                 "stream": True,
             }
-            if LLM_PROVIDER == "nvidia":
+            if provider == "nvidia":
+                kwargs["model"] = "nvidia/nemotron-3-ultra-550b-a55b"
                 kwargs["max_tokens"] = 16384
                 kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True}}
             else:
+                kwargs["model"] = "llama-3.3-70b-versatile"
                 kwargs["max_completion_tokens"] = 8192
 
             completion = client.chat.completions.create(**kwargs)
@@ -199,7 +202,7 @@ def analyze_story(story_text: str) -> Dict[str, Any]:
         ]
         raw = ""
         try:
-            raw = _stream_response(client, messages, temperature=0.4)
+            raw = _stream_response(client, provider, messages, temperature=0.4)
             return _parse_json_from_response(raw)
         except Exception as e:
             print(f"[llm_service] analyze_story error: {e}\nRaw response: {raw!r}")
@@ -243,7 +246,7 @@ def _infer_risk_weight(description: str) -> Literal["high", "medium", "low"]:
     return "low"
 
 
-def _extract_testable_behaviors(client: Any, story_text: str) -> List[BehaviorTag]:
+def _extract_testable_behaviors(client: Any, provider: str, story_text: str) -> List[BehaviorTag]:
     """
     Pass 1 — Ask the model to enumerate every distinct testable behavior,
     acceptance criterion, rule, and edge condition present in the story.
@@ -283,7 +286,7 @@ def _extract_testable_behaviors(client: Any, story_text: str) -> List[BehaviorTa
     ]
     raw = ""
     try:
-        raw = _stream_response(client, messages, temperature=0.3)
+        raw = _stream_response(client, provider, messages, temperature=0.3)
         result = _parse_json_from_response(raw)
         if not isinstance(result, list):
             raise ValueError(f"Expected list, got: {type(result)}")
@@ -319,7 +322,7 @@ def _extract_testable_behaviors(client: Any, story_text: str) -> List[BehaviorTa
 # ---------------------------------------------------------------------------
 
 def _verify_extraction_completeness(
-    client: Any, story_text: str, behaviors: List[BehaviorTag]
+    client: Any, provider: str, story_text: str, behaviors: List[BehaviorTag]
 ) -> List[BehaviorTag]:
     """
     Pass 1b — Feed the story + extracted behavior list back to the model.
@@ -362,7 +365,7 @@ def _verify_extraction_completeness(
     ]
     raw = ""
     try:
-        raw = _stream_response(client, messages, temperature=0.3)
+        raw = _stream_response(client, provider, messages, temperature=0.3)
         gaps = _parse_json_from_response(raw)
         if not isinstance(gaps, list):
             return behaviors
@@ -578,6 +581,7 @@ def _compute_slot_allocation(
 
 def _generate_cases_for_behaviors(
     client: Any,
+    provider: str,
     story_text: str,
     behaviors: List[BehaviorTag],
     allocation: Dict[str, int],
@@ -646,7 +650,7 @@ def _generate_cases_for_behaviors(
     ]
     raw = ""
     try:
-        raw = _stream_response(client, messages, temperature=0.6)
+        raw = _stream_response(client, provider, messages, temperature=0.6)
         result = _parse_json_from_response(raw)
         if isinstance(result, list) and len(result) > 0:
             return result
@@ -700,6 +704,7 @@ def _validate_specificity(test_cases: list) -> Tuple[list, list]:
 
 def _regenerate_flagged_cases(
     client: Any,
+    provider: str,
     story_text: str,
     flagged_cases: list,
     behaviors: List[BehaviorTag],
@@ -741,7 +746,7 @@ def _regenerate_flagged_cases(
     ]
     raw = ""
     try:
-        raw = _stream_response(client, messages, temperature=0.3)
+        raw = _stream_response(client, provider, messages, temperature=0.3)
         fixed = _parse_json_from_response(raw)
         if isinstance(fixed, list) and len(fixed) == len(flagged_cases):
             print(f"[llm_service] §4: Successfully regenerated {len(fixed)} flagged cases.")
@@ -872,9 +877,10 @@ def _compute_coverage_gaps(
 # Orchestration — generate_test_cases  (public API)
 # ---------------------------------------------------------------------------
 
-def generate_test_cases(story_text: str) -> Dict[str, Any]:
+def generate_test_cases(story_text: str, provider_override: Optional[str] = None) -> Dict[str, Any]:
     """
-    Two-pass exhaustive test case generator with quality and coverage enhancements.
+    Main orchestration function for the enhanced v2 generation pipeline.
+    Expects to generate <= 25 test cases with optimal coverage and minimal overlap.
 
     Returns a dict with:
       test_cases           : list of test case dicts (≤ 25, same shape as v1)
@@ -883,13 +889,14 @@ def generate_test_cases(story_text: str) -> Dict[str, Any]:
       skipped_categories   : list of category names classified as not applicable
       generation_meta      : diagnostic metadata (behavior count, passes run, etc.)
     """
-    client = _get_client()
+    provider = provider_override if provider_override else LLM_PROVIDER
+    client = _get_client(provider)
     if not client:
-        raise RuntimeError("LLM client not available for generate_test_cases.")
+        return {"message": "AI Generation Disabled", "count": 0, "test_cases": []}
 
     # ── Pass 1: Extract behaviors ──────────────────────────────────────────
     print("[llm_service] Pass 1: extracting testable behaviors…")
-    behaviors = _extract_testable_behaviors(client, story_text)
+    behaviors = _extract_testable_behaviors(client, provider, story_text)
     if not behaviors:
         print("[llm_service] Pass 1 returned no behaviors — aborting.")
         raise RuntimeError("Failed to extract any testable behaviors from the story.")
@@ -898,7 +905,7 @@ def generate_test_cases(story_text: str) -> Dict[str, Any]:
 
     # ── Pass 1b: Self-verification gap-fill ───────────────────────────────
     print("[llm_service] Pass 1b: self-verification completeness check…")
-    behaviors = _verify_extraction_completeness(client, story_text, behaviors)
+    behaviors = _verify_extraction_completeness(client, provider, story_text, behaviors)
     print(f"[llm_service] Pass 1b complete: {len(behaviors)} behaviors total.")
 
     # ── §2: Category applicability ─────────────────────────────────────────
@@ -915,7 +922,7 @@ def generate_test_cases(story_text: str) -> Dict[str, Any]:
 
     # ── Pass 2: Generate test cases ────────────────────────────────────────
     print("[llm_service] Pass 2: generating test cases…")
-    raw_cases = _generate_cases_for_behaviors(client, story_text, behaviors, allocation, applicability)
+    raw_cases = _generate_cases_for_behaviors(client, provider, story_text, behaviors, allocation, applicability)
     if not raw_cases:
         raise RuntimeError("Pass 2 returned empty list — failed to generate test cases.")
 
@@ -925,8 +932,8 @@ def generate_test_cases(story_text: str) -> Dict[str, Any]:
     # ── §4: Specificity validation ─────────────────────────────────────────
     valid_cases, flagged_cases = _validate_specificity(raw_cases)
     if flagged_cases:
-        print(f"[llm_service] §4: {len(flagged_cases)} cases flagged for low specificity.")
-        fixed = _regenerate_flagged_cases(client, story_text, flagged_cases, behaviors)
+        print(f"[llm_service] §4: regenerating {len(flagged_cases)} non-specific cases…")
+        fixed = _regenerate_flagged_cases(client, provider, story_text, flagged_cases, behaviors)
         valid_cases = valid_cases + fixed
         # Re-validate after regen
         valid_cases, still_flagged = _validate_specificity(valid_cases)

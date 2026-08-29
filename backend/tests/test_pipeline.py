@@ -408,7 +408,7 @@ class TestGeneratePipelineIntegration(unittest.TestCase):
         from llm_service import generate_test_cases
         call_count = [0]
 
-        def fake_stream(client, messages, temperature=0.6, max_retries=3):
+        def fake_stream(client, provider, messages, temperature=0.6, max_retries=3):
             idx = call_count[0]
             call_count[0] += 1
             if idx < len(mock_responses):

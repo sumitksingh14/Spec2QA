@@ -516,6 +516,12 @@ def _verify_extraction_completeness(
         return behaviors
 
 
+_SECURITY_KEYWORDS = {
+    "auth", "authentication", "authorization", "login", "logout", "password",
+    "token", "permission", "role", "admin", "payment", "pii", "personal data",
+    "csrf", "injection", "encrypt", "credential", "2fa", "mfa", "otp", "session",
+    "privilege", "access control", "api key", "secret",
+}
 _ACCESSIBILITY_KEYWORDS = {
     "button", "form", "input", "label", "image", "img", "modal", "dialog",
     "screen reader", "keyboard", "focus", "aria", "wcag", "contrast", "ui",

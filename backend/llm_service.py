@@ -91,13 +91,13 @@ _PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
     ),
     "groq": ProviderConfig(
         name="groq",
-        model_id="groq/compound",
+        model_id="qwen/qwen3.8-27b",
         max_tokens=8192,
     ),
     # Draft mode — fast preview via groq smaller model
     "draft": ProviderConfig(
         name="groq",
-        model_id="groq/compound-mini",
+        model_id="openai/gpt-oss-20b",
         max_tokens=4096,
         is_draft=True,
     ),
@@ -238,15 +238,32 @@ def _stream_response(
 def _parse_json_from_response(raw: str):
     """
     Robustly extract JSON from a model response that may include
-    markdown fences (```json ... ```) or plain JSON.
+    thinking blocks (<think>...</think>), markdown fences (```json ... ```),
+    or plain JSON text.
     """
     text = raw.strip()
+    # Strip <think>...</think> if present
+    if "<think>" in text:
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
     # Strip markdown code fences if present
     if text.startswith("```"):
-        # Remove opening fence (```json or ```)
         text = text[text.index("\n") + 1:] if "\n" in text else text[3:]
     if text.endswith("```"):
         text = text[:-3].strip()
+
+    # Isolate JSON object or array bounds
+    first_bracket = min(
+        [pos for pos in [text.find("{"), text.find("[")] if pos != -1],
+        default=-1
+    )
+    last_bracket = max(
+        [text.rfind("}"), text.rfind("]")],
+        default=-1
+    )
+    if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
+        text = text[first_bracket:last_bracket + 1]
+
     return json.loads(text)
 
 

@@ -589,7 +589,14 @@ export default function StoryDetails() {
     const doc = new jsPDF('landscape');
     doc.setFontSize(16); doc.text(story?.title || 'Test Cases', 14, 15);
     doc.setFontSize(9); doc.text(`Generated: ${new Date().toLocaleDateString()}`, 14, 22);
-    autoTable(doc, { head: [['ID','Category','Title','Steps','Expected Result','✓','✗']], body: testCases.map(tc => [tc.sequence_id, tc.category, tc.title, steps(tc).map((s,i)=>`${i+1}. ${s}`).join('\n'), tc.expected_result,'','']), startY: 30, styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' }, columnStyles: { 0:{cellWidth:20},1:{cellWidth:22},2:{cellWidth:35},3:{cellWidth:90},4:{cellWidth:60},5:{cellWidth:12},6:{cellWidth:12} } });
+    autoTable(doc, {
+      head: [['ID','Category','Title','Steps','Expected Result','✓','✗']],
+      body: testCases.map(tc => [tc.sequence_id, tc.category, tc.title, steps(tc).map((s,i)=>`${i+1}. ${s}`).join('\n'), tc.expected_result,'','']),
+      startY: 28,
+      margin: { left: 14, right: 14 },
+      styles: { fontSize: 8, cellPadding: 2, overflow: 'linebreak' },
+      columnStyles: { 0:{cellWidth:20}, 1:{cellWidth:24}, 2:{cellWidth:40}, 3:{cellWidth:95}, 4:{cellWidth:65}, 5:{cellWidth:10}, 6:{cellWidth:10} }
+    });
     doc.save(`${(story?.title || 'story').replace(/[^a-z0-9]/gi, '_').toLowerCase()}_test_cases.pdf`);
   };
 

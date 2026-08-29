@@ -91,13 +91,13 @@ _PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
     ),
     "groq": ProviderConfig(
         name="groq",
-        model_id="llama-3.3-70b-versatile",
+        model_id="groq/compound",
         max_tokens=8192,
     ),
     # Draft mode — fast preview via groq smaller model
     "draft": ProviderConfig(
         name="groq",
-        model_id="llama-3.1-8b-instant",
+        model_id="groq/compound-mini",
         max_tokens=4096,
         is_draft=True,
     ),

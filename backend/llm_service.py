@@ -23,6 +23,7 @@ import re
 import json
 import time
 from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict
+from groq import Groq
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -32,9 +33,16 @@ load_dotenv()
 # Configuration
 # ---------------------------------------------------------------------------
 
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
+
+if LLM_PROVIDER == "nvidia":
+    MODEL = "nvidia/nemotron-3-ultra-550b-a55b"
+else:
+    MODEL = "llama-3.3-70b-versatile"
 
 TOTAL_CASE_CAP: int = 25         # Fixed product decision — never change
 CATEGORY_MIN: int = 1            # Minimum slots per applicable category
@@ -79,43 +87,53 @@ class CategoryStatus(TypedDict):
 # LLM client helpers  (unchanged from v1)
 # ---------------------------------------------------------------------------
 
-def _get_client() -> Optional[OpenAI]:
-    """Return an OpenAI-compatible client pointed at the NVIDIA NIM endpoint."""
-    if not NVIDIA_API_KEY:
-        print("[llm_service] NVIDIA_API_KEY not set — AI generation unavailable.")
-        return None
-    return OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
+def _get_client() -> Any:
+    """Return an LLM client based on LLM_PROVIDER."""
+    if LLM_PROVIDER == "nvidia":
+        if not NVIDIA_API_KEY:
+            print("[llm_service] NVIDIA_API_KEY not set — AI generation unavailable.")
+            return None
+        return OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
+    else:
+        if not GROQ_API_KEY:
+            print("[llm_service] GROQ_API_KEY not set — AI generation unavailable.")
+            return None
+        return Groq(api_key=GROQ_API_KEY)
 
 
 def _stream_response(
-    client: OpenAI,
+    client: Any,
     messages: list,
     temperature: float = 0.6,
     max_retries: int = 3,
 ) -> str:
     """
-    Stream a chat completion from the NVIDIA NIM API.
+    Stream a chat completion from the configured LLM API.
     Retries with exponential backoff on transient errors (overloaded, rate limit).
-    Returns only the final answer content; thinking/reasoning tokens are discarded.
+    Returns only the final answer content.
     """
     last_error: Optional[Exception] = None
     for attempt in range(1, max_retries + 1):
         try:
-            completion = client.chat.completions.create(
-                model=MODEL,
-                messages=messages,
-                temperature=temperature,
-                top_p=0.95,
-                max_tokens=16384,
-                extra_body={"chat_template_kwargs": {"enable_thinking": True}},
-                stream=True,
-            )
+            kwargs = {
+                "model": MODEL,
+                "messages": messages,
+                "temperature": temperature,
+                "top_p": 0.95,
+                "stream": True,
+            }
+            if LLM_PROVIDER == "nvidia":
+                kwargs["max_tokens"] = 16384
+                kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": True}}
+            else:
+                kwargs["max_completion_tokens"] = 8192
+
+            completion = client.chat.completions.create(**kwargs)
             content_parts = []
             for chunk in completion:
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
-                # Ignore reasoning/thinking tokens — only capture the final answer
                 if delta.content:
                     content_parts.append(delta.content)
             return "".join(content_parts).strip()
@@ -225,7 +243,7 @@ def _infer_risk_weight(description: str) -> Literal["high", "medium", "low"]:
     return "low"
 
 
-def _extract_testable_behaviors(client: OpenAI, story_text: str) -> List[BehaviorTag]:
+def _extract_testable_behaviors(client: Any, story_text: str) -> List[BehaviorTag]:
     """
     Pass 1 — Ask the model to enumerate every distinct testable behavior,
     acceptance criterion, rule, and edge condition present in the story.
@@ -301,7 +319,7 @@ def _extract_testable_behaviors(client: OpenAI, story_text: str) -> List[Behavio
 # ---------------------------------------------------------------------------
 
 def _verify_extraction_completeness(
-    client: OpenAI, story_text: str, behaviors: List[BehaviorTag]
+    client: Any, story_text: str, behaviors: List[BehaviorTag]
 ) -> List[BehaviorTag]:
     """
     Pass 1b — Feed the story + extracted behavior list back to the model.
@@ -559,7 +577,7 @@ def _compute_slot_allocation(
 # ---------------------------------------------------------------------------
 
 def _generate_cases_for_behaviors(
-    client: OpenAI,
+    client: Any,
     story_text: str,
     behaviors: List[BehaviorTag],
     allocation: Dict[str, int],
@@ -681,7 +699,7 @@ def _validate_specificity(test_cases: list) -> Tuple[list, list]:
 
 
 def _regenerate_flagged_cases(
-    client: OpenAI,
+    client: Any,
     story_text: str,
     flagged_cases: list,
     behaviors: List[BehaviorTag],

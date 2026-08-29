@@ -19,6 +19,17 @@ if SQLALCHEMY_DATABASE_URL.startswith("postgresql://") or SQLALCHEMY_DATABASE_UR
 
 connect_args = {"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {}
 
+# pg8000 does not support the `channel_binding` query parameter that Neon
+# includes by default — strip it so the connection doesn't crash on startup.
+if "channel_binding" in SQLALCHEMY_DATABASE_URL:
+    import urllib.parse as _urlparse
+    _parsed = _urlparse.urlparse(SQLALCHEMY_DATABASE_URL)
+    _qs = _urlparse.parse_qs(_parsed.query, keep_blank_values=True)
+    _qs.pop("channel_binding", None)
+    SQLALCHEMY_DATABASE_URL = _urlparse.urlunparse(
+        _parsed._replace(query=_urlparse.urlencode(_qs, doseq=True))
+    )
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, connect_args=connect_args
 )

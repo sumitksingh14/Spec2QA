@@ -6,8 +6,4 @@ _backend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'b
 if _backend_dir not in sys.path:
     sys.path.insert(0, _backend_dir)
 
-from main import app as fastapi_app
-from mangum import Mangum
-
-app = Mangum(fastapi_app, lifespan="off")
-handler = app
+from main import app as app

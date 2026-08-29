@@ -1,4 +1,6 @@
 import os
+import ssl
+import urllib.parse as _urlparse
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -8,31 +10,35 @@ SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:////tmp/storyto
 if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+connect_args = {}
+
 # Use pg8000 (pure-Python, no pg_config needed) when connecting to Postgres
-# Fall back to psycopg2 only if explicitly requested via DATABASE_URL query string
 if SQLALCHEMY_DATABASE_URL.startswith("postgresql://") or SQLALCHEMY_DATABASE_URL.startswith("postgresql+"):
-    # Switch to pg8000 driver if not already specified, avoids pg_config dependency
     if "+" not in SQLALCHEMY_DATABASE_URL.split("://")[0]:
-        SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace(
-            "postgresql://", "postgresql+pg8000://", 1
-        )
+        SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
 
-connect_args = {"check_same_thread": False} if SQLALCHEMY_DATABASE_URL.startswith("sqlite") else {}
-
-# pg8000 does not support the `channel_binding` query parameter that Neon
-# includes by default — strip it so the connection doesn't crash on startup.
-if "channel_binding" in SQLALCHEMY_DATABASE_URL:
-    import urllib.parse as _urlparse
+    # pg8000 expects SSL via ssl_context parameter rather than unsupported query string parameters
     _parsed = _urlparse.urlparse(SQLALCHEMY_DATABASE_URL)
     _qs = _urlparse.parse_qs(_parsed.query, keep_blank_values=True)
+    ssl_requested = "sslmode" in _qs or "ssl" in _qs or "neon.tech" in SQLALCHEMY_DATABASE_URL
+    _qs.pop("sslmode", None)
     _qs.pop("channel_binding", None)
+    _qs.pop("ssl", None)
+
     SQLALCHEMY_DATABASE_URL = _urlparse.urlunparse(
         _parsed._replace(query=_urlparse.urlencode(_qs, doseq=True))
     )
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args=connect_args
-)
+    if ssl_requested:
+        ssl_ctx = ssl.create_default_context()
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = ssl.CERT_NONE
+        connect_args["ssl_context"] = ssl_ctx
+
+elif SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+    connect_args["check_same_thread"] = False
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

@@ -1,7 +1,8 @@
 """
 Vercel Python serverless entry point for Spec2QA.
 
-`handler` MUST be a top-level name so @vercel/python can find it.
+When using `builds` in vercel.json, @vercel/python requires a top-level
+callable named `app`, `application`, or `handler`.  We expose `app`.
 """
 from __future__ import annotations  # enables dict | None on Python 3.9
 
@@ -10,16 +11,18 @@ import os
 import json
 import traceback
 
-# Make backend/ importable
+# Make backend/ importable at runtime (Vercel bundles backend/** via includeFiles)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-_startup_error = None   # type: dict | None
-_mangum_handler = None
+_startup_error: dict | None = None
 
 try:
-    from main import app          # noqa: F401  (resolved via sys.path above)
+    from main import app as _fastapi_app   # type: ignore[import]  # resolved via sys.path at runtime
     from mangum import Mangum
-    _mangum_handler = Mangum(app, lifespan="off")
+
+    # `app` is the top-level name @vercel/python will discover and invoke.
+    app = Mangum(_fastapi_app, lifespan="off")
+
 except Exception as _exc:
     _startup_error = {
         "startup_error": str(_exc),
@@ -32,14 +35,11 @@ except Exception as _exc:
         ),
     }
 
-
-async def handler(scope, receive, send):
-    """Top-level ASGI entry point — always present for @vercel/python."""
-    if _mangum_handler is not None:
-        await _mangum_handler(scope, receive, send)
-        return
-
-    if scope["type"] == "http":
+    # Fallback: a bare ASGI app that returns the startup error as JSON.
+    async def app(scope, receive, send):  # type: ignore[misc]  # noqa: E302
+        """Minimal ASGI fallback when the real app fails to import."""
+        if scope["type"] != "http":
+            return
         body = json.dumps(_startup_error, indent=2).encode()
         await send({
             "type": "http.response.start",

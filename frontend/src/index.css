@@ -252,6 +252,7 @@ a { text-decoration: none; color: inherit; }
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   outline: none;
   -webkit-appearance: none;
+  appearance: none;
 }
 
 .form-input::placeholder, .form-textarea::placeholder {

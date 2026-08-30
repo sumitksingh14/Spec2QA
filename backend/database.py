@@ -51,6 +51,22 @@ def init_db():
                     conn.commit()
                 except Exception:
                     pass
+            # Ensure generation_jobs table exists (async job tracker for 504 fix)
+            try:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS generation_jobs (
+                        id VARCHAR PRIMARY KEY,
+                        story_id INTEGER REFERENCES stories(id),
+                        status VARCHAR DEFAULT 'pending',
+                        error TEXT,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        completed_at TIMESTAMP,
+                        request_json TEXT
+                    )
+                """))
+                conn.commit()
+            except Exception as e:
+                print(f"[database] generation_jobs table note: {e}")
     except Exception as e:
         print(f"[database] Note on schema auto-migration: {e}")
 

@@ -241,3 +241,27 @@ class ExecutionResult(database.Base):
 
     test_case = relationship("TestCase", back_populates="execution_results")
     run = relationship("GenerationRun", back_populates="execution_results")
+
+
+# ---------------------------------------------------------------------------
+# Async generation job tracker (fixes Vercel 504 / maxDuration timeout)
+# ---------------------------------------------------------------------------
+
+class GenerationJob(database.Base):
+    """
+    Tracks in-progress and completed LLM generation jobs.
+    The POST /api/generate/manual-tests endpoint creates a job and returns
+    its job_id immediately. A background thread runs the pipeline and updates
+    this row. The frontend polls GET /api/generate/status/{job_id}.
+    """
+    __tablename__ = "generation_jobs"
+
+    id = Column(String, primary_key=True)          # UUID job_id
+    story_id = Column(Integer, ForeignKey("stories.id"), nullable=True)
+    status = Column(String, default="pending")     # pending | running | done | failed
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime, nullable=True)
+    # Serialised request payload so the background thread can reconstruct it
+    request_json = Column(Text, nullable=True)
+

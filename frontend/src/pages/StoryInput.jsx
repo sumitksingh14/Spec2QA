@@ -104,7 +104,7 @@ function ScopeControlStep({ description, onConfirm, onBack, loading }) {
           style={{ flex: 1, justifyContent: 'center', borderRadius: 'var(--radius-pill)', padding: '0.7rem' }}
         >
           {loading
-            ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Generating…</>
+            ? <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> {loadingMsg}</>
             : <>Generate Test Cases <ArrowRight size={15} /></>}
         </button>
       </div>
@@ -118,6 +118,7 @@ export default function StoryInput() {
   const [storyType, setStoryType]     = useState('Web UI');
   const [llmProvider, setLlmProvider] = useState('auto');
   const [loading, setLoading]         = useState(false);
+  const [loadingMsg, setLoadingMsg]   = useState('Generating…');
   const [analysisResult, setAnalysisResult] = useState(null);
   const [storyId, setStoryId]         = useState(null);
   const [clarifications, setClarifications] = useState({});
@@ -131,18 +132,53 @@ export default function StoryInput() {
         ? '\n\nClarifications provided:\n' +
           Object.entries(clarificationsData).map(([q, a]) => `Q: ${q}\nA: ${a}`).join('\n')
         : '');
-      const res = await fetch('/api/generate/manual-tests', {
+
+      // Step 1: kick off generation — returns immediately with job_id
+      const kickRes = await fetch('/api/generate/manual-tests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ story_id: id, clarified_description: clarifiedDesc, llm_provider: llmProvider, excluded_ac_ids: excludedAcIds }),
       });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
-      navigate(`/story/${id}`);
+      if (!kickRes.ok) throw new Error(`Server error: ${kickRes.status}`);
+      const { job_id } = await kickRes.json();
+
+      // Step 2: poll status every 3 seconds until done or failed
+      const POLL_INTERVAL_MS = 3000;
+      const MAX_WAIT_MS = 5 * 60 * 1000; // 5 minutes hard cap
+      const startTime = Date.now();
+
+      const poll = async () => {
+        if (Date.now() - startTime > MAX_WAIT_MS) {
+          throw new Error('Generation timed out after 5 minutes. Please try again.');
+        }
+        const elapsed = Date.now() - startTime;
+        if (elapsed < 15000)       setLoadingMsg('Analysing story…');
+        else if (elapsed < 60000)  setLoadingMsg('Generating test cases…');
+        else                       setLoadingMsg('Finalising results…');
+
+        const statusRes = await fetch(`/api/generate/status/${job_id}`);
+        if (!statusRes.ok) throw new Error(`Status check failed: ${statusRes.status}`);
+        const statusData = await statusRes.json();
+
+        if (statusData.status === 'done') {
+          navigate(`/story/${statusData.story_id}`);
+          return;
+        }
+        if (statusData.status === 'failed') {
+          throw new Error(statusData.error || 'Generation failed. Check the model and try again.');
+        }
+        // Still pending or running — poll again
+        await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+        return poll();
+      };
+
+      await poll();
     } catch (err) {
       alert(`Error generating test cases: ${err.message}`);
       setLoading(false);
     }
   };
+
 
   const handleAnalyze = async (e) => {
     e.preventDefault();

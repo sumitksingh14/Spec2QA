@@ -4,7 +4,8 @@ main.py — Spec2QA FastAPI application.
 Routes:
   Existing:
     POST   /api/analyze
-    POST   /api/generate/manual-tests
+    POST   /api/generate/manual-tests   → returns {job_id} immediately
+    GET    /api/generate/status/{job_id} → poll for done/failed
     GET    /api/stories
     GET    /api/stories/{story_id}
     DELETE /api/stories/{story_id}
@@ -64,11 +65,12 @@ import json
 import os
 import re
 import secrets
+import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import FastAPI, Depends, HTTPException, Header, Query
+from fastapi import FastAPI, Depends, HTTPException, Header, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -167,142 +169,177 @@ def analyze_story(story: schemas.StoryCreate, db: Session = Depends(database.get
 @app.post("/api/generate/manual-tests")
 def generate_tests(
     request: schemas.GenerateTestCasesRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(database.get_db),
 ):
-    """Generate test cases using the two-pass pipeline."""
+    """
+    Kick off async test-case generation. Returns a job_id immediately so the
+    frontend can poll GET /api/generate/status/{job_id} without hitting the
+    Vercel 504 gateway timeout.
+    """
+    _ensure_db()
     db_story = _story_or_404(request.story_id, db)
-    story_text = request.clarified_description or db_story.description
 
+    # Persist clarified description and excluded ACs up-front
     if request.clarified_description and request.clarified_description != db_story.description:
         db_story.clarified_description = request.clarified_description
-
-    # Feature 3 — persist exclusion choices
     if request.excluded_ac_ids:
         db_story.excluded_ac_ids_json = json.dumps(request.excluded_ac_ids)
-
-    # Call LLM pipeline
-    try:
-        generation_result = llm_service.generate_test_cases(
-            story_text,
-            provider_override=request.llm_provider,
-            excluded_ac_ids=request.excluded_ac_ids or [],
-        )
-    except Exception as e:
-        import traceback
-        raise HTTPException(
-            status_code=500,
-            detail=f"Test Generation Failed: {str(e)} -- Traceback: {traceback.format_exc()}"
-        )
-
-    test_cases_data = generation_result["test_cases"]
-    uncovered_behaviors = generation_result.get("uncovered_behaviors", [])
-    category_allocation = generation_result.get("category_allocation", {})
-    skipped_categories = generation_result.get("skipped_categories", [])
-    generation_meta = generation_result.get("generation_meta", {})
-    run_metrics = generation_result.get("metrics", {})
-
-    # Feature 4 — Create a GenerationRun record
-    db_run = models.GenerationRun(
-        story_id=db_story.id,
-        version=db_story.version or 1,
-        generation_meta_json=json.dumps({
-            "uncovered_behaviors": uncovered_behaviors,
-            "category_allocation": {
-                cat: {
-                    "applicable": s.get("applicable", True),
-                    "reason": s.get("reason", ""),
-                    "allocated_slots": s.get("allocated_slots", 0),
-                }
-                for cat, s in category_allocation.items()
-            },
-            "skipped_categories": skipped_categories,
-            "generation_meta": generation_meta,
-            # Feature 15 — auto-model telemetry for frontend display
-            "run_metrics": {
-                "provider": run_metrics.get("provider_used", request.llm_provider or ""),
-                "model_used": run_metrics.get("model_used", ""),
-                "wall_time_ms": run_metrics.get("wall_time_ms", 0),
-                "retry_count": run_metrics.get("retry_count", 0),
-            },
-        }),
-        # Feature 14 metrics
-        wall_time_ms=run_metrics.get("wall_time_ms", 0),
-        retry_count=run_metrics.get("retry_count", 0),
-        provider=run_metrics.get("provider_used", request.llm_provider or ""),
-    )
-    db.add(db_run)
-    db.flush()  # get db_run.id
-
-    # Persist coverage/gap metadata to Story for reload
-    db_story.generation_meta_json = db_run.generation_meta_json
-
-    generated_tests = []
-    for i, tc_data in enumerate(test_cases_data, start=1):
-        # Feature 1 — find and store the BehaviorTag context for this case
-        covers_id = tc_data.get("covers_behavior_id")
-        behavior_ctx = None
-        if covers_id is not None:
-            # generation_meta carries behaviors as part of the result; look up from uncovered + covered
-            # We store the behavior from generation_meta if available
-            behavior_ctx = {"covers_behavior_id": covers_id}
-
-        db_tc = models.TestCase(
-            story_id=db_story.id,
-            run_id=db_run.id,
-            sequence_id=f"TC-{db_story.id}-{i:02d}",
-            title=tc_data.get("title", ""),
-            category=tc_data.get("category", "Functional"),
-            priority=tc_data.get("priority", "Medium"),
-            preconditions=tc_data.get("preconditions", ""),
-            steps=tc_data.get("steps", []),
-            expected_result=tc_data.get("expected_result", ""),
-            behavior_context_json=json.dumps(behavior_ctx) if behavior_ctx else None,
-        )
-        db.add(db_tc)
-        generated_tests.append(db_tc)
-
     db.commit()
 
-    for tc in generated_tests:
-        db.refresh(tc)
+    # Create a job record
+    job_id = str(uuid.uuid4())
+    job = models.GenerationJob(
+        id=job_id,
+        story_id=request.story_id,
+        status="pending",
+        request_json=request.model_dump_json(),
+    )
+    db.add(job)
+    db.commit()
 
-    # Feature 8 — Fire Slack webhook if configured for this story
-    wh = db.query(models.WebhookConfig).filter(
-        models.WebhookConfig.story_id == db_story.id,
-        models.WebhookConfig.enabled == True,
-    ).first()
-    if wh:
-        cat_breakdown = {
-            cat: s.get("allocated_slots", 0)
-            for cat, s in category_allocation.items()
-            if s.get("applicable", True)
-        }
-        slack_payload = {
-            "text": (
-                f"✅ *Spec2QA* — Generation complete for *{db_story.title}*\n"
-                f"• {len(generated_tests)} test cases generated\n"
-                f"• Categories: {', '.join(f'{k}: {v}' for k, v in cat_breakdown.items())}\n"
-                f"• Uncovered behaviors: {len(uncovered_behaviors)}"
+    # Enqueue the heavy work as a background task
+    background_tasks.add_task(_run_generation_job, job_id, request)
+
+    return {"job_id": job_id, "status": "pending"}
+
+
+def _run_generation_job(job_id: str, request: schemas.GenerateTestCasesRequest):
+    """
+    Background worker: runs the full LLM pipeline and persists all results.
+    Updates the GenerationJob row to 'running' → 'done' or 'failed'.
+    """
+    db = database.SessionLocal()
+    try:
+        _ensure_db()
+        job = db.query(models.GenerationJob).filter(models.GenerationJob.id == job_id).first()
+        if not job:
+            return
+        job.status = "running"
+        db.commit()
+
+        db_story = db.query(models.Story).filter(models.Story.id == request.story_id).first()
+        if not db_story:
+            job.status = "failed"
+            job.error = "Story not found"
+            job.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            return
+
+        story_text = request.clarified_description or db_story.description
+
+        # ── Call LLM pipeline ─────────────────────────────────────────────
+        try:
+            generation_result = llm_service.generate_test_cases(
+                story_text,
+                provider_override=request.llm_provider,
+                excluded_ac_ids=request.excluded_ac_ids or [],
             )
-        }
-        _fire_slack_webhook(wh.slack_webhook_url, slack_payload)
+        except Exception as e:
+            import traceback
+            job.status = "failed"
+            job.error = f"{str(e)}\n{traceback.format_exc()}"
+            job.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            return
 
+        test_cases_data = generation_result["test_cases"]
+        uncovered_behaviors = generation_result.get("uncovered_behaviors", [])
+        category_allocation = generation_result.get("category_allocation", {})
+        skipped_categories = generation_result.get("skipped_categories", [])
+        generation_meta = generation_result.get("generation_meta", {})
+        run_metrics = generation_result.get("metrics", {})
+
+        # ── Feature 4 — GenerationRun record ─────────────────────────────
+        db_run = models.GenerationRun(
+            story_id=db_story.id,
+            version=db_story.version or 1,
+            generation_meta_json=json.dumps({
+                "uncovered_behaviors": uncovered_behaviors,
+                "category_allocation": {
+                    cat: {
+                        "applicable": s.get("applicable", True),
+                        "reason": s.get("reason", ""),
+                        "allocated_slots": s.get("allocated_slots", 0),
+                    }
+                    for cat, s in category_allocation.items()
+                },
+                "skipped_categories": skipped_categories,
+                "generation_meta": generation_meta,
+                # Feature 15 — auto-model telemetry for frontend display
+                "run_metrics": {
+                    "provider": run_metrics.get("provider_used", request.llm_provider or ""),
+                    "model_used": run_metrics.get("model_used", ""),
+                    "wall_time_ms": run_metrics.get("wall_time_ms", 0),
+                    "retry_count": run_metrics.get("retry_count", 0),
+                },
+            }),
+            wall_time_ms=run_metrics.get("wall_time_ms", 0),
+            retry_count=run_metrics.get("retry_count", 0),
+            provider=run_metrics.get("provider_used", request.llm_provider or ""),
+        )
+        db.add(db_run)
+        db.flush()
+
+        db_story.generation_meta_json = db_run.generation_meta_json
+
+        # ── Persist test cases ────────────────────────────────────────────
+        db.query(models.TestCase).filter(models.TestCase.story_id == db_story.id).delete()
+        for i, tc_data in enumerate(test_cases_data, start=1):
+            covers_id = tc_data.get("covers_behavior_id")
+            behavior_ctx = {"covers_behavior_id": covers_id} if covers_id is not None else None
+            db_tc = models.TestCase(
+                story_id=db_story.id,
+                run_id=db_run.id,
+                sequence_id=f"TC-{db_story.id:03d}-{i:02d}",
+                title=tc_data.get("title", ""),
+                category=tc_data.get("category", "Functional"),
+                priority=tc_data.get("priority", "Medium"),
+                preconditions=tc_data.get("preconditions"),
+                steps=tc_data.get("steps", []),
+                expected_result=tc_data.get("expected_result", ""),
+                behavior_context=behavior_ctx,
+            )
+            db.add(db_tc)
+
+        db_story.version = (db_story.version or 1) + 1 if db_story.version and db_story.version > 0 else 1
+        job.status = "done"
+        job.completed_at = datetime.now(timezone.utc)
+        db.commit()
+
+    except Exception as e:
+        import traceback
+        try:
+            job = db.query(models.GenerationJob).filter(models.GenerationJob.id == job_id).first()
+            if job:
+                job.status = "failed"
+                job.error = f"{str(e)}\n{traceback.format_exc()}"
+                job.completed_at = datetime.now(timezone.utc)
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+@app.get("/api/generate/status/{job_id}")
+def get_generation_status(job_id: str, db: Session = Depends(database.get_db)):
+    """
+    Poll for async generation job completion.
+    Returns: { status: 'pending'|'running'|'done'|'failed', story_id, error? }
+    Frontend navigates to /story/{story_id} when status == 'done'.
+    """
+    _ensure_db()
+    job = db.query(models.GenerationJob).filter(models.GenerationJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
     return {
-        "message": "Test cases generated successfully",
-        "count": len(generated_tests),
-        "test_cases": generated_tests,
-        "run_id": db_run.id,
-        "uncovered_behaviors": uncovered_behaviors,
-        "category_allocation": {
-            cat: {
-                "applicable": s.get("applicable", True),
-                "reason": s.get("reason", ""),
-                "allocated_slots": s.get("allocated_slots", 0),
-            }
-            for cat, s in category_allocation.items()
-        },
-        "skipped_categories": skipped_categories,
-        "generation_meta": generation_meta,
+        "job_id": job_id,
+        "status": job.status,
+        "story_id": job.story_id,
+        "error": job.error,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
     }
 
 

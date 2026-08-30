@@ -6,6 +6,7 @@ export default function Dashboard() {
   const [stories, setStories] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const fetchStories = () => {
     fetch('/api/stories')
@@ -29,6 +30,21 @@ export default function Dashboard() {
       console.error(err);
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!window.confirm("Are you sure you want to clear all stories? This cannot be undone.")) return;
+    setClearing(true);
+    try {
+      const res = await fetch('/api/stories', { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setStories([]);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setClearing(false);
     }
   };
 
@@ -114,9 +130,21 @@ export default function Dashboard() {
       <div className="glass-panel">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem 1.5rem', borderBottom: '1px solid var(--border)' }}>
           <h2 style={{ fontSize: '1rem', fontWeight: 700, letterSpacing: '-0.01em' }}>Recent Stories</h2>
-          <Link to="/new-story" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.35rem 0.85rem' }}>
-            <FileText size={13} /> New Story
-          </Link>
+          <div style={{ display: 'flex', gap: '0.75rem' }}>
+            {stories.length > 0 && (
+              <button 
+                onClick={handleClearAll}
+                disabled={clearing}
+                className="btn btn-ghost" 
+                style={{ fontSize: '0.78rem', padding: '0.35rem 0.85rem', color: 'var(--red)' }}
+              >
+                <Trash2 size={13} /> {clearing ? 'Clearing…' : 'Clear All'}
+              </button>
+            )}
+            <Link to="/new-story" className="btn btn-secondary" style={{ fontSize: '0.78rem', padding: '0.35rem 0.85rem' }}>
+              <FileText size={13} /> New Story
+            </Link>
+          </div>
         </div>
 
         {stories.length === 0 ? (

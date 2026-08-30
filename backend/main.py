@@ -362,6 +362,17 @@ def delete_story(story_id: int, db: Session = Depends(database.get_db)):
     return None
 
 
+@app.delete("/api/stories", status_code=204)
+def clear_all_stories(db: Session = Depends(database.get_db)):
+    """Deletes all stories and their associated records."""
+    db.query(models.TestCase).delete()
+    db.query(models.GenerationRun).delete()
+    db.query(models.GenerationJob).delete()
+    db.query(models.Story).delete()
+    db.commit()
+    return None
+
+
 @app.get("/api/stories", response_model=List[schemas.Story])
 def get_stories(db: Session = Depends(database.get_db)):
     return db.query(models.Story).order_by(models.Story.created_at.desc()).all()

@@ -28,6 +28,7 @@ import os
 import re
 import json
 import time
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict
 from groq import Groq
@@ -41,6 +42,7 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "groq").lower()
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
 FALLBACK_LLM_PROVIDER = os.getenv("FALLBACK_LLM_PROVIDER", "")  # Feature 13
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -91,36 +93,219 @@ _PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
     ),
     "groq": ProviderConfig(
         name="groq",
+        model_id=GROQ_MODEL,
+        max_tokens=4000,
+    ),
+    "groq-20b": ProviderConfig(
+        name="groq",
         model_id="openai/gpt-oss-20b",
-        max_tokens=4096,
+        max_tokens=4000,
+    ),
+    "groq-120b": ProviderConfig(
+        name="groq",
+        model_id="openai/gpt-oss-120b",
+        max_tokens=4000,
+    ),
+    "groq-qwen": ProviderConfig(
+        name="groq",
+        model_id="qwen/qwen3.8-27b",
+        max_tokens=4000,
+    ),
+    "groq-compound": ProviderConfig(
+        name="groq",
+        model_id="groq/compound",
+        max_tokens=4000,
+    ),
+    "groq-compound-mini": ProviderConfig(
+        name="groq",
+        model_id="groq/compound-mini",
+        max_tokens=4000,
+    ),
+    "groq-allam": ProviderConfig(
+        name="groq",
+        model_id="allam-2-7b",
+        max_tokens=4000,
     ),
     # Draft mode — fast preview via groq smaller model
     "draft": ProviderConfig(
         name="groq",
-        model_id="openai/gpt-oss-20b",
-        max_tokens=4096,
+        model_id="allam-2-7b",
+        max_tokens=4000,
         is_draft=True,
     ),
 }
 
 
 def _resolve_provider_chain(primary: str) -> List[ProviderConfig]:
-    """Return [primary_config, fallback_config?] for use in _stream_response_with_fallback."""
+    """Return [primary_config, groq_fallbacks..., nvidia_fallback?] for seamless resilience."""
     chain: List[ProviderConfig] = []
 
-    # Normalise "draft" → use groq draft config but keep nvidia as fallback
+    # Normalise "draft" → use groq draft config
     actual_primary = "draft" if primary == "draft" else primary
     cfg = _PROVIDER_CONFIGS.get(actual_primary) or _PROVIDER_CONFIGS.get("groq")
-    chain.append(cfg)
+    if cfg:
+        chain.append(cfg)
+
+    # If primary is a Groq model, chain other verified working Groq models as automatic fallbacks
+    if cfg and cfg.name == "groq":
+        groq_fallbacks = [
+            _PROVIDER_CONFIGS["groq-120b"],
+            _PROVIDER_CONFIGS["groq-20b"],
+            _PROVIDER_CONFIGS["groq-qwen"],
+            _PROVIDER_CONFIGS["groq-allam"],
+        ]
+        for fb in groq_fallbacks:
+            if fb.model_id != cfg.model_id and all(c.model_id != fb.model_id for c in chain):
+                chain.append(fb)
 
     # Fallback (Feature 13): configured via env or opposite of primary
-    fb_name = FALLBACK_LLM_PROVIDER or ("groq" if cfg.name == "nvidia" else "")
-    if fb_name and fb_name != cfg.name:
+    fb_name = FALLBACK_LLM_PROVIDER or ("nvidia" if cfg and cfg.name == "groq" else "")
+    if fb_name:
         fb_cfg = _PROVIDER_CONFIGS.get(fb_name)
-        if fb_cfg:
+        if fb_cfg and all(c.name != fb_cfg.name or c.model_id != fb_cfg.model_id for c in chain):
             chain.append(fb_cfg)
 
     return chain
+
+
+# ---------------------------------------------------------------------------
+# Auto-Model Selection — intelligently pick the best Groq model
+# ---------------------------------------------------------------------------
+
+class _ModelHealthTracker:
+    """
+    Lightweight in-process singleton that tracks each Groq model's recent
+    success/failure history to inform runtime model selection.
+    Thread-safe using a lock.
+    """
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        # model_id -> {"failures": int, "last_fail_ts": float, "successes": int, "last_success_ts": float}
+        self._state: Dict[str, Dict[str, Any]] = {}
+        self._FAILURE_COOLDOWN_S: int = 120  # Deprioritise a model for 2 min after a failure
+
+    def record_success(self, model_id: str) -> None:
+        with self._lock:
+            s = self._state.setdefault(model_id, {"failures": 0, "last_fail_ts": 0.0, "successes": 0, "last_success_ts": 0.0})
+            s["successes"] += 1
+            s["last_success_ts"] = time.monotonic()
+
+    def record_failure(self, model_id: str) -> None:
+        with self._lock:
+            s = self._state.setdefault(model_id, {"failures": 0, "last_fail_ts": 0.0, "successes": 0, "last_success_ts": 0.0})
+            s["failures"] += 1
+            s["last_fail_ts"] = time.monotonic()
+
+    def is_healthy(self, model_id: str) -> bool:
+        """Return True if model has not recently failed."""
+        with self._lock:
+            s = self._state.get(model_id)
+            if not s:
+                return True
+            age = time.monotonic() - s["last_fail_ts"]
+            return age >= self._FAILURE_COOLDOWN_S
+
+    def health_score(self, model_id: str) -> float:
+        """
+        Returns a health score [0.0 – 1.0].
+        1.0 = never failed (or cooldown expired), 0.0 = very recently failed.
+        """
+        with self._lock:
+            s = self._state.get(model_id)
+            if not s or s["last_fail_ts"] == 0.0:
+                return 1.0
+            age = time.monotonic() - s["last_fail_ts"]
+            return min(1.0, age / self._FAILURE_COOLDOWN_S)
+
+
+_model_health = _ModelHealthTracker()
+
+
+# Model registry — all verified working Groq models ranked by default priority.
+# Each entry: (config_key, capability_tier)
+#   capability_tier: 3=highest quality, 2=good, 1=fast/lightweight
+_GROQ_MODEL_REGISTRY: List[Tuple[str, int]] = [
+    ("groq-120b",        3),   # openai/gpt-oss-120b      — highest quality, heavy
+    ("groq-qwen",        2),   # qwen/qwen3.8-27b         — good quality, medium speed
+    ("groq-20b",         2),   # openai/gpt-oss-20b       — good quality, fast
+    ("groq-compound",    2),   # groq/compound            — reasoning-capable
+    ("groq-compound-mini", 1), # groq/compound-mini       — quick reasoning
+    ("groq-allam",       1),   # allam-2-7b               — ultra-fast, lightweight
+]
+
+# Story complexity thresholds (estimated word counts)
+_COMPLEXITY_WORDS_HIGH: int = 200   # long story → prefer quality model
+_COMPLEXITY_WORDS_MED:  int = 80    # medium story → balanced
+
+
+def _estimate_complexity(story_text: str) -> int:
+    """
+    Compute a 1-3 complexity score for a user story.
+      3 = High   (long story / many ACs / security-heavy)
+      2 = Medium
+      1 = Low    (short, simple story)
+    """
+    words = len(story_text.split())
+    ac_count = story_text.lower().count("acceptance criteria") + story_text.count("\n-") + story_text.count("\n1.")
+    security_terms = sum(
+        1 for kw in ["auth", "2fa", "otp", "password", "token", "encrypt", "permission", "role", "payment"]
+        if kw in story_text.lower()
+    )
+    score = 1
+    if words >= _COMPLEXITY_WORDS_HIGH or ac_count >= 5 or security_terms >= 3:
+        score = 3
+    elif words >= _COMPLEXITY_WORDS_MED or ac_count >= 2 or security_terms >= 1:
+        score = 2
+    return score
+
+
+def _select_best_model(story_text: str, provider: str = "groq") -> str:
+    """
+    Auto-select the best model config key given story complexity and live
+    model health. Returns a _PROVIDER_CONFIGS key such as 'groq-120b'.
+
+    Selection algorithm:
+      1. Estimate story complexity (1=low, 2=medium, 3=high).
+      2. Build a candidate list ordered by preferred tier for the complexity level.
+      3. Score each candidate: tier_score × health_score, skip recently failed models.
+      4. Return the highest-scoring candidate that is currently healthy.
+         Falls back to the next best even if unhealthy if all are unhealthy.
+    """
+    if provider != "groq":
+        # For NVIDIA or other providers, no auto-selection — use provider as-is
+        return provider
+
+    complexity = _estimate_complexity(story_text)
+    print(f"[llm_service] auto-select: story complexity={complexity}/3, evaluating {len(_GROQ_MODEL_REGISTRY)} Groq models…")
+
+    # Weight each model: higher tier preferred for complex stories,
+    # lower tier preferred for simple stories (faster)
+    def _candidate_score(config_key: str, tier: int) -> float:
+        health = _model_health.health_score(config_key)
+        if complexity == 3:
+            tier_weight = tier / 3.0          # strongly prefer tier-3 for complex
+        elif complexity == 1:
+            tier_weight = (4 - tier) / 3.0    # prefer tier-1 (fast) for simple
+        else:
+            tier_weight = 1.0                  # balanced for medium: all equal weight
+        return tier_weight * health
+
+    scored = [
+        (config_key, tier, _candidate_score(config_key, tier))
+        for config_key, tier in _GROQ_MODEL_REGISTRY
+        if config_key in _PROVIDER_CONFIGS
+    ]
+    scored.sort(key=lambda x: x[2], reverse=True)
+
+    best_key = scored[0][0]  # best score (healthy or not)
+    for config_key, tier, score in scored:
+        if _model_health.is_healthy(config_key):
+            best_key = config_key
+            break
+
+    chosen = _PROVIDER_CONFIGS[best_key]
+    print(f"[llm_service] auto-select: chose '{best_key}' (model={chosen.model_id}, tier={dict(_GROQ_MODEL_REGISTRY)[best_key]}, complexity={complexity}/3)")
+    return best_key
 
 
 # ---------------------------------------------------------------------------
@@ -211,10 +396,15 @@ def _stream_response(
                     if delta.content:
                         content_parts.append(delta.content)
                 result = "".join(content_parts).strip()
+                if not result:
+                    raise RuntimeError(f"Model {cfg.model_id} returned empty content.")
                 if metrics is not None:
                     metrics["provider_used"] = cfg.name
+                    metrics.setdefault("model_used", cfg.model_id)
+                _model_health.record_success(cfg.model_id)
                 return result
             except Exception as e:
+                _model_health.record_failure(cfg.model_id)
                 last_error = e
                 is_transient = any(
                     phrase in str(e).lower()
@@ -239,9 +429,11 @@ def _parse_json_from_response(raw: str):
     """
     Robustly extract JSON from a model response that may include
     thinking blocks (<think>...</think>), markdown fences (```json ... ```),
-    or plain JSON text. Handles truncated JSON arrays gracefully.
+    or plain JSON text. Handles truncated JSON arrays gracefully, including
+    mid-string cutoffs and deeply-nested objects (e.g. steps arrays inside objects).
     """
     text = raw.strip()
+
     # Strip <think>...</think> if present
     if "<think>" in text:
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
@@ -252,37 +444,155 @@ def _parse_json_from_response(raw: str):
     if text.endswith("```"):
         text = text[:-3].strip()
 
-    # Isolate JSON object or array bounds
+    # Isolate from first JSON bracket
     first_bracket = min(
         [pos for pos in [text.find("{"), text.find("[")] if pos != -1],
         default=-1
     )
-    last_bracket = max(
-        [text.rfind("}"), text.rfind("]")],
-        default=-1
-    )
-    candidate_text = text
-    if first_bracket != -1 and last_bracket != -1 and last_bracket > first_bracket:
-        candidate_text = text[first_bracket:last_bracket + 1]
+    if first_bracket != -1:
+        text = text[first_bracket:]
 
+    # --- Attempt 1: Parse as-is (complete JSON) ---
     try:
-        return json.loads(candidate_text)
+        return json.loads(text)
     except json.JSONDecodeError:
-        # If truncated JSON array, recover all valid complete JSON objects inside it
-        if "[" in text:
-            objs = []
-            for match in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, flags=re.DOTALL):
+        pass
+
+    # --- Attempt 2: Depth-tracking recovery of complete objects from a truncated array ---
+    # Scan the text character-by-character tracking bracket depth.
+    # Collect each top-level object boundary [start, end] where depth returns to 0.
+    # Discard the last incomplete object if it exists.
+    if not text.startswith("["):
+        # Not an array — try to close a single truncated object
+        repaired = _repair_truncated_json(text)
+        try:
+            return json.loads(repaired)
+        except Exception:
+            return json.loads(text)  # re-raise original error
+
+    complete_objects: List[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    escape_next = False
+    obj_start: Optional[int] = None
+    depth = 0
+
+    while i < n:
+        ch = text[i]
+        if escape_next:
+            escape_next = False
+            i += 1
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            i += 1
+            continue
+        if ch == '"':
+            in_string = not in_string
+            i += 1
+            continue
+        if in_string:
+            i += 1
+            continue
+        if ch == "{":
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and obj_start is not None:
+                complete_objects.append(text[obj_start:i + 1])
+                obj_start = None
+        i += 1
+
+    if complete_objects:
+        # Try to parse each collected object
+        recovered: List[dict] = []
+        for obj_str in complete_objects:
+            try:
+                obj = json.loads(obj_str)
+                if isinstance(obj, dict):
+                    recovered.append(obj)
+            except Exception:
+                # Try to repair and parse
                 try:
-                    obj = json.loads(match.group(0))
+                    obj = json.loads(_repair_truncated_json(obj_str))
                     if isinstance(obj, dict):
-                        objs.append(obj)
+                        recovered.append(obj)
                 except Exception:
                     pass
-            if objs:
-                print(f"[llm_service] Recovered {len(objs)} items from truncated JSON response.")
-                return objs
+        if recovered:
+            print(f"[llm_service] Recovered {len(recovered)} items from truncated JSON response.")
+            return recovered
+    else:
+        # No complete top-level objects — the entire array is one big truncated object.
+        # Try to repair the whole text.
+        try:
+            repaired = _repair_truncated_json(text)
+            result = json.loads(repaired)
+            if isinstance(result, list) and result:
+                print(f"[llm_service] Recovered {len(result)} items by repairing truncated array.")
+                return result
+            if isinstance(result, dict):
+                print("[llm_service] Recovered 1 item by repairing truncated object.")
+                return [result]
+        except Exception:
+            pass
 
-        return json.loads(candidate_text)
+    # --- Attempt 3: Fall back to simple regex for shallow objects ---
+    objs: List[dict] = []
+    for match in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, flags=re.DOTALL):
+        try:
+            obj = json.loads(match.group(0))
+            if isinstance(obj, dict):
+                objs.append(obj)
+        except Exception:
+            pass
+    if objs:
+        print(f"[llm_service] Recovered {len(objs)} items via shallow regex from truncated JSON response.")
+        return objs
+
+    # Final fallback — let json.loads raise a meaningful error
+    return json.loads(text)
+
+
+def _repair_truncated_json(text: str) -> str:
+    """
+    Attempt to close a truncated JSON string/object/array by appending
+    the necessary closing characters inferred from unclosed brackets.
+    """
+    # Close any open string first (heuristic: odd number of unescaped quotes)
+    open_brackets: List[str] = []
+    in_string = False
+    escape_next = False
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if not in_string:
+            if ch in ("{", "["):
+                open_brackets.append(ch)
+            elif ch == "}" and open_brackets and open_brackets[-1] == "{":
+                open_brackets.pop()
+            elif ch == "]" and open_brackets and open_brackets[-1] == "[":
+                open_brackets.pop()
+
+    suffix = ""
+    if in_string:
+        suffix += '"'
+    # Close remaining open brackets in reverse order
+    for bracket in reversed(open_brackets):
+        suffix += "}" if bracket == "{" else "]"
+    return text + suffix
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -1071,8 +1381,17 @@ def generate_test_cases(
     import time as _time
     t_start = _time.monotonic()
 
-    provider = provider_override if provider_override else LLM_PROVIDER
-    client = _get_client(provider)
+    # Feature 15: Auto-model selection
+    # When provider is "auto" or not overridden and provider is groq, pick the best model.
+    raw_provider = provider_override if provider_override else LLM_PROVIDER
+    if raw_provider in ("auto", "groq") and not provider_override:
+        provider = _select_best_model(story_text, provider="groq")
+    elif raw_provider == "auto":
+        provider = _select_best_model(story_text, provider="groq")
+    else:
+        provider = raw_provider
+
+    client = _get_client(_PROVIDER_CONFIGS.get(provider, _PROVIDER_CONFIGS["groq"]).name)
     if not client:
         return {"message": "AI Generation Disabled", "count": 0, "test_cases": []}
 

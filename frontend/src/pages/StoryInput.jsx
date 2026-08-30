@@ -116,7 +116,7 @@ export default function StoryInput() {
   const [title, setTitle]             = useState('');
   const [description, setDescription] = useState('');
   const [storyType, setStoryType]     = useState('Web UI');
-  const [llmProvider, setLlmProvider] = useState('groq');
+  const [llmProvider, setLlmProvider] = useState('auto');
   const [loading, setLoading]         = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [storyId, setStoryId]         = useState(null);
@@ -227,9 +227,21 @@ export default function StoryInput() {
             <div className="form-group">
               <label className="form-label">LLM Provider</label>
               <select className="form-input" value={llmProvider} onChange={e => setLlmProvider(e.target.value)}>
-                <option value="groq">Groq — Llama 3.3 70b</option>
-                <option value="nvidia">Nvidia — Nemotron-3</option>
-                <option value="draft">Draft Mode (fast)</option>
+                <optgroup label="🤖 Auto">
+                  <option value="auto">⚡ Auto — Best Model (Recommended)</option>
+                </optgroup>
+                <optgroup label="Groq Models">
+                  <option value="groq-120b">Groq — GPT-OSS 120B (Highest Quality)</option>
+                  <option value="groq-qwen">Groq — Qwen 3.8-27B (Balanced)</option>
+                  <option value="groq-20b">Groq — GPT-OSS 20B (Fast)</option>
+                  <option value="groq-compound">Groq — Compound (Reasoning)</option>
+                  <option value="groq-compound-mini">Groq — Compound Mini (Quick)</option>
+                  <option value="groq-allam">Groq — Allam 2-7B (Lightweight)</option>
+                  <option value="draft">Draft Mode (Allam fast preview)</option>
+                </optgroup>
+                <optgroup label="NVIDIA">
+                  <option value="nvidia">NVIDIA — Nemotron-3 Ultra 550B</option>
+                </optgroup>
               </select>
             </div>
           </div>

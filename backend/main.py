@@ -217,6 +217,13 @@ def generate_tests(
             },
             "skipped_categories": skipped_categories,
             "generation_meta": generation_meta,
+            # Feature 15 — auto-model telemetry for frontend display
+            "run_metrics": {
+                "provider": run_metrics.get("provider_used", request.llm_provider or ""),
+                "model_used": run_metrics.get("model_used", ""),
+                "wall_time_ms": run_metrics.get("wall_time_ms", 0),
+                "retry_count": run_metrics.get("retry_count", 0),
+            },
         }),
         # Feature 14 metrics
         wall_time_ms=run_metrics.get("wall_time_ms", 0),

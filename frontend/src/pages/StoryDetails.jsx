@@ -5,7 +5,7 @@ import {
   AlertTriangle, Activity, Copy, Info,
   MoreVertical, RefreshCw, Edit2, Trash2, Share2, Bell,
   MessageSquare, ChevronDown, ChevronUp, Play, Lightbulb,
-  X, Send, Loader, ArrowRight, Sparkles, Filter,
+  X, Send, Loader, ArrowRight, Sparkles, Filter, Cpu, Zap,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -114,7 +114,51 @@ function UncoveredBehaviorsPanel({ uncoveredBehaviors }) {
   );
 }
 
-// ── Per-row Action Menu ────────────────────────────────────────────────────
+// ── Generation Metrics Bar ─────────────────────────────────────────────────
+
+const MODEL_LABELS = {
+  'openai/gpt-oss-120b':             'GPT-OSS 120B',
+  'openai/gpt-oss-20b':              'GPT-OSS 20B',
+  'qwen/qwen3.8-27b':                'Qwen 3.8-27B',
+  'groq/compound':                   'Compound',
+  'groq/compound-mini':              'Compound Mini',
+  'allam-2-7b':                      'Allam 2-7B',
+  'nvidia/nemotron-3-ultra-550b-a55b': 'Nemotron-3 550B',
+};
+
+const COMPLEXITY_LABELS = { 1: { label: 'Simple', color: 'var(--green)' }, 2: { label: 'Medium', color: 'var(--amber)' }, 3: { label: 'Complex', color: 'var(--red)' } };
+
+function GenerationMetricsBar({ runMetrics }) {
+  if (!runMetrics) return null;
+  const { provider, model_used, wall_time_ms, retry_count, complexity } = runMetrics;
+  if (!provider && !model_used) return null;
+
+  const modelLabel = MODEL_LABELS[model_used] || model_used || '—';
+  const providerLabel = provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : '—';
+  const wallTimeSec = wall_time_ms ? `${(wall_time_ms / 1000).toFixed(1)}s` : null;
+  const complexityInfo = complexity ? COMPLEXITY_LABELS[complexity] : null;
+
+  const pill = (icon, label, value, valueColor) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', padding: '0.3rem 0.75rem', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', background: 'var(--bg-surface)', fontSize: '0.78rem' }}>
+      <span style={{ color: 'var(--text-tertiary)', display: 'flex' }}>{icon}</span>
+      <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+      <span style={{ fontWeight: 700, color: valueColor || 'var(--text-primary)' }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', padding: '0.85rem 1.25rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.08em', marginRight: '0.25rem' }}>Generation</span>
+      {pill(<Cpu size={12} />, 'Model', modelLabel)}
+      {pill(<Zap size={12} />, 'Provider', providerLabel)}
+      {wallTimeSec && pill(<Activity size={12} />, 'Time', wallTimeSec)}
+      {retry_count > 0 && pill(<RefreshCw size={12} />, 'Retries', retry_count, 'var(--amber)')}
+      {complexityInfo && pill(<Filter size={12} />, 'Complexity', complexityInfo.label, complexityInfo.color)}
+    </div>
+  );
+}
+
+
 
 function ActionMenu({ tc, onRegenerate, onEdit, onDelete }) {
   const [open, setOpen] = useState(false);
@@ -671,6 +715,9 @@ export default function StoryDetails() {
           );
         })}
       </div>
+
+      {/* ── Generation metrics ───────────────────────────────── */}
+      <GenerationMetricsBar runMetrics={generationMeta?.run_metrics} />
 
       {/* ── Category allocation ─────────────────────────────── */}
       <CategoryAllocationBar categoryAllocation={generationMeta?.category_allocation} skippedCategories={generationMeta?.skipped_categories} categoryCounts={categoryCounts} />

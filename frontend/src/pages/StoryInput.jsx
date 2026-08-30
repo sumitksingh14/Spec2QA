@@ -24,20 +24,8 @@ function parseACs(description) {
 
 // Feature 3 — Scope control step
 function ScopeControlStep({ description, onConfirm, onBack, loading, loadingMsg }) {
-  const [acs, setAcs] = useState([]);
+  const acs = parseACs(description);
   const [excluded, setExcluded] = useState(new Set());
-
-  useEffect(() => {
-    // Feature 3 — Fast heuristic extraction of ACs for scope control
-    const extracted = [];
-    const lines = description.split('\n');
-    lines.forEach((line, i) => {
-      if (line.match(/^(?:Given|When|Then|And|But)\s/i) || line.match(/^[•*-]\s.*(should|must|will)\s/i) || line.match(/^\d+\.\s.*(should|must|will)\s/i)) {
-        extracted.push({ index: i, text: line.trim() });
-      }
-    });
-    setAcs(extracted);
-  }, [description]);
 
   const toggle = (idx) => {
     setExcluded(prev => {

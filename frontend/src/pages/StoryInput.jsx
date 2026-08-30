@@ -23,15 +23,26 @@ function parseACs(description) {
 }
 
 // Feature 3 — Scope control step
-function ScopeControlStep({ description, onConfirm, onBack, loading }) {
-  const acs = parseACs(description);
+function ScopeControlStep({ description, onConfirm, onBack, loading, loadingMsg }) {
+  const [acs, setAcs] = useState([]);
   const [excluded, setExcluded] = useState(new Set());
+
+  useEffect(() => {
+    // Feature 3 — Fast heuristic extraction of ACs for scope control
+    const extracted = [];
+    const lines = description.split('\n');
+    lines.forEach((line, i) => {
+      if (line.match(/^(?:Given|When|Then|And|But)\s/i) || line.match(/^[•*-]\s.*(should|must|will)\s/i) || line.match(/^\d+\.\s.*(should|must|will)\s/i)) {
+        extracted.push({ index: i, text: line.trim() });
+      }
+    });
+    setAcs(extracted);
+  }, [description]);
 
   const toggle = (idx) => {
     setExcluded(prev => {
       const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
       return next;
     });
   };
@@ -42,10 +53,8 @@ function ScopeControlStep({ description, onConfirm, onBack, loading }) {
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.25rem 0.65rem', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', marginBottom: '0.75rem' }}>
           <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Step 3 of 3</span>
         </div>
-        <h2 style={{ fontSize: '1.5rem', marginBottom: '0.4rem' }}>Review Scope</h2>
-        <p style={{ fontSize: '0.9rem' }}>
-          Toggle any acceptance criteria to <strong>exclude</strong> from generation. Excluded items free up budget for the rest.
-        </p>
+        <h2 style={{ fontSize: '1.5rem', marginBottom: '0.4rem' }}>Scope Control</h2>
+        <p style={{ fontSize: '0.9rem' }}>We extracted {acs.length} acceptance criteria. Toggle the eye icon to exclude out-of-scope items from generation.</p>
       </div>
 
       <div className="glass-panel" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
@@ -359,6 +368,7 @@ export default function StoryInput() {
           onConfirm={excludedAcIds => generateTestCases(storyId, description, clarifications, excludedAcIds)}
           onBack={() => setStep(analysisResult?.questions?.length > 0 ? 'clarify' : 'analyze')}
           loading={loading}
+          loadingMsg={loadingMsg}
         />
       )}
     </div>

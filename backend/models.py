@@ -38,6 +38,7 @@ class Story(database.Base):
     acceptance_criteria = relationship("AcceptanceCriterion", back_populates="story", cascade="all, delete-orphan")
     test_cases = relationship("TestCase", back_populates="story", cascade="all, delete-orphan")
     generation_runs = relationship("GenerationRun", back_populates="story", cascade="all, delete-orphan")
+    generation_jobs = relationship("GenerationJob", back_populates="story", cascade="all, delete-orphan")
     share_tokens = relationship("ShareToken", back_populates="story", cascade="all, delete-orphan")
     qa_exchanges = relationship("QAExchange", back_populates="story", cascade="all, delete-orphan")
     webhook_config = relationship("WebhookConfig", back_populates="story", uselist=False, cascade="all, delete-orphan")
@@ -264,4 +265,6 @@ class GenerationJob(database.Base):
     completed_at = Column(DateTime, nullable=True)
     # Serialised request payload so the background thread can reconstruct it
     request_json = Column(Text, nullable=True)
+
+    story = relationship("Story", back_populates="generation_jobs")
 

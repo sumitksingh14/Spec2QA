@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BarChart2, Clock, Zap, RefreshCw, TrendingUp, Filter, ChevronDown, ChevronUp } from 'lucide-react';
+import { BarChart2, Clock, Zap, RefreshCw, TrendingUp, Filter, Trash2, AlertTriangle } from 'lucide-react';
 
 function MetricCard({ label, value, sub, color = 'var(--accent)' }) {
   return (
@@ -94,6 +94,26 @@ export default function AdminDashboard() {
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd]   = useState('');
   const [expandedId, setExpandedId] = useState(null);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearSuccess, setClearSuccess] = useState(false);
+
+  const handleClearHistory = async () => {
+    setClearing(true);
+    try {
+      const res = await fetch('/api/admin/clear-history', { method: 'DELETE' });
+      if (res.ok || res.status === 204) {
+        setClearSuccess(true);
+        setShowClearModal(false);
+        setMetrics([]);
+        setTimeout(() => setClearSuccess(false), 3000);
+      }
+    } catch (err) {
+      console.error('Clear history failed:', err);
+    } finally {
+      setClearing(false);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -125,13 +145,30 @@ export default function AdminDashboard() {
 
   return (
     <div>
-      <div style={{ marginBottom: '2rem' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.25rem 0.65rem', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', marginBottom: '0.75rem' }}>
-          <BarChart2 size={11} style={{ color: 'var(--blue)' }} />
-          <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Metrics</span>
+      <div style={{ marginBottom: '2rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.25rem 0.65rem', borderRadius: 'var(--radius-pill)', border: '1px solid var(--border)', marginBottom: '0.75rem' }}>
+            <BarChart2 size={11} style={{ color: 'var(--blue)' }} />
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Metrics</span>
+          </div>
+          <h1 style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>Admin Dashboard</h1>
+          <p>Generation run metrics, token usage, and coverage trends.</p>
         </div>
-        <h1 style={{ fontSize: '2rem', marginBottom: '0.4rem' }}>Admin Dashboard</h1>
-        <p>Generation run metrics, token usage, and coverage trends.</p>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.5rem' }}>
+          <button
+            id="admin-clear-history-btn"
+            className="btn"
+            onClick={() => setShowClearModal(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-pill)', padding: '0.45rem 1rem', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.6)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)'; }}
+          >
+            <Trash2 size={13} /> Clear History
+          </button>
+          {clearSuccess && (
+            <span style={{ fontSize: '0.75rem', color: '#10b981', animation: 'fadeIn 0.3s ease' }}>✓ History cleared</span>
+          )}
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -236,6 +273,50 @@ export default function AdminDashboard() {
           </table>
         )}
       </div>
+
+      {/* ── Clear History confirmation modal ─────────────────────────────── */}
+      {showClearModal && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+          onClick={() => !clearing && setShowClearModal(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: 'var(--surface)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '16px', padding: '2rem', maxWidth: '420px', width: '90%', boxShadow: '0 24px 60px rgba(0,0,0,0.5)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle size={20} style={{ color: '#f87171' }} />
+              </div>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0 }}>Clear All Test Case History?</h3>
+            </div>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1.5rem' }}>
+              This will permanently delete <strong style={{ color: 'var(--text-primary)' }}>all generated test cases</strong>, generation runs, QA exchanges, and execution results.
+              <br /><br />
+              <span style={{ color: '#fbbf24' }}>Stories will be preserved</span> — you can regenerate test cases at any time.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowClearModal(false)}
+                disabled={clearing}
+                style={{ borderRadius: 'var(--radius-pill)' }}
+              >
+                Cancel
+              </button>
+              <button
+                id="admin-clear-history-confirm-btn"
+                onClick={handleClearHistory}
+                disabled={clearing}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', background: '#dc2626', color: 'white', border: '1px solid #dc2626', borderRadius: 'var(--radius-pill)', padding: '0.45rem 1.1rem', fontSize: '0.85rem', fontWeight: 600, cursor: clearing ? 'not-allowed' : 'pointer', opacity: clearing ? 0.7 : 1, transition: 'all 0.2s' }}
+              >
+                <Trash2 size={13} />
+                {clearing ? 'Clearing…' : 'Yes, Clear History'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

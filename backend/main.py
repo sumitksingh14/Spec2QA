@@ -361,6 +361,8 @@ def get_story(story_id: int, db: Session = Depends(database.get_db)):
 @app.delete("/api/stories/{story_id}", status_code=204)
 def delete_story(story_id: int, db: Session = Depends(database.get_db)):
     story = _story_or_404(story_id, db)
+    # Explicitly delete generation_jobs first (FK not covered by ORM cascade on older deployments)
+    db.query(models.GenerationJob).filter(models.GenerationJob.story_id == story_id).delete(synchronize_session=False)
     db.delete(story)
     db.commit()
     return None
@@ -1075,6 +1077,23 @@ def get_admin_metrics(
         }
         for run, story in rows
     ]
+
+
+@app.delete("/api/admin/clear-history", status_code=204)
+def admin_clear_history(db: Session = Depends(database.get_db)):
+    """
+    Admin: delete all generated test cases and their related records
+    (execution results, comments, generation runs, generation jobs, QA exchanges)
+    while preserving story definitions.
+    """
+    db.query(models.ExecutionResult).delete(synchronize_session=False)
+    db.query(models.Comment).delete(synchronize_session=False)
+    db.query(models.TestCase).delete(synchronize_session=False)
+    db.query(models.QAExchange).delete(synchronize_session=False)
+    db.query(models.GenerationJob).delete(synchronize_session=False)
+    db.query(models.GenerationRun).delete(synchronize_session=False)
+    db.commit()
+    return None
 
 
 # ---------------------------------------------------------------------------

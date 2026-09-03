@@ -79,18 +79,22 @@ import schemas
 import database
 import llm_service
 
-app = FastAPI(title="Spec2QA API")
+from contextlib import asynccontextmanager
 
-_db_initialized = False
+@asynccontextmanager
+async def lifespan(app_: FastAPI):
+    try:
+        database.init_db()
+        print("[main] Database initialized")
+    except Exception as e:
+        print(f"[main] database.init_db error: {e}")
+    yield
+
+app = FastAPI(title="Spec2QA API", lifespan=lifespan)
 
 def _ensure_db():
-    global _db_initialized
-    if not _db_initialized:
-        _db_initialized = True
-        try:
-            database.init_db()
-        except Exception as e:
-            print(f"[main] database.init_db error: {e}")
+    """Legacy no-op kept for compatibility."""
+    pass
 
 app.add_middleware(
     CORSMiddleware,

@@ -59,7 +59,7 @@ def init_db():
                         story_id INTEGER REFERENCES stories(id),
                         status VARCHAR DEFAULT 'pending',
                         error TEXT,
-                        created_at TIMESTAMP DEFAULT NOW(),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         completed_at TIMESTAMP,
                         request_json TEXT
                     )

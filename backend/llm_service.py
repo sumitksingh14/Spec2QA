@@ -141,6 +141,113 @@ _PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
         model_id="default",
         max_tokens=8192,
     ),
+
+    # ── LLM7 text models ─────────────────────────────────────────────────
+    # Pricing: input/output in USD per 1M tokens
+    "llm7-deepseek-v4-flash-0731": ProviderConfig(
+        name="llm7", model_id="DeepSeek-V4-Flash-0731", max_tokens=8192,
+        # $0.02 in / $0.04 out
+    ),
+    "llm7-inkling-small": ProviderConfig(
+        name="llm7", model_id="Inkling-Small", max_tokens=8192,
+        # $0.50 in / $1.20 out
+    ),
+    "llm7-l3-8b-lunaris": ProviderConfig(
+        name="llm7", model_id="L3-8B-Lunaris-v1-Turbo", max_tokens=8192,
+        # $0.04 in / $0.05 out
+    ),
+    "llm7-mimo-v2.5": ProviderConfig(
+        name="llm7", model_id="XiaomiMiMo/MiMo-V2.5", max_tokens=8192,
+        # $0.40 in / $2.00 out
+    ),
+    "llm7-claude-haiku-4-5": ProviderConfig(
+        name="llm7", model_id="claude-haiku-4-5", max_tokens=8192,
+        # $0.04 in / $0.20 out
+    ),
+    "llm7-claude-sonnet-4-6": ProviderConfig(
+        name="llm7", model_id="claude-sonnet-4-6", max_tokens=8192,
+        # $0.12 in / $0.45 out
+    ),
+    "llm7-claude-sonnet-5": ProviderConfig(
+        name="llm7", model_id="claude-sonnet-5", max_tokens=8192,
+        # $0.45 in / $2.25 out
+    ),
+    "llm7-codestral-latest": ProviderConfig(
+        name="llm7", model_id="codestral-latest", max_tokens=8192,
+        # $0.01 in / $0.02 out
+    ),
+    "llm7-deepseek-v4-flash-v2": ProviderConfig(
+        name="llm7", model_id="deepseek-v4-flash:0731", max_tokens=8192,
+        # $0.08 in / $0.16 out
+    ),
+    "llm7-deepseek-v4-pro": ProviderConfig(
+        name="llm7", model_id="deepseek-v4-pro", max_tokens=8192,
+        # $0.37 in / $0.74 out
+    ),
+    "llm7-gemini-3-flash": ProviderConfig(
+        name="llm7", model_id="gemini-3-flash", max_tokens=8192,
+        # $0.03 in / $0.08 out
+    ),
+    "llm7-gemini-3.1-flash-lite": ProviderConfig(
+        name="llm7", model_id="gemini-3.1-flash-lite", max_tokens=8192,
+        # $0.02 in / $0.04 out
+    ),
+    "llm7-gemini-3.7-flash": ProviderConfig(
+        name="llm7", model_id="gemini-3.7-flash", max_tokens=8192,
+        # $0.06 in / $0.30 out
+    ),
+    "llm7-gemini-3.8-flash-high": ProviderConfig(
+        name="llm7", model_id="gemini-3.8-flash-high", max_tokens=8192,
+        # $0.05 in / $0.15 out
+    ),
+    "llm7-gemma4-31b": ProviderConfig(
+        name="llm7", model_id="gemma4:31b", max_tokens=8192,
+        # $0.03 in / $0.08 out
+    ),
+    "llm7-glm-5.3": ProviderConfig(
+        name="llm7", model_id="glm-5.3", max_tokens=8192,
+        # $0.50 in / $2.00 out
+    ),
+    "llm7-glm-5.3-flash": ProviderConfig(
+        name="llm7", model_id="glm-5.3-flash", max_tokens=8192,
+        # $0.15 in / $0.55 out
+    ),
+    "llm7-gpt-5.5-compact": ProviderConfig(
+        name="llm7", model_id="gpt-5.5-openai-compact", max_tokens=8192,
+        # $0.20 in / $1.20 out
+    ),
+    "llm7-gpt-5.6-luna": ProviderConfig(
+        name="llm7", model_id="gpt-5.6-luna", max_tokens=8192,
+        # $0.30 in / $1.80 out
+    ),
+    "llm7-gpt-5.6-terra": ProviderConfig(
+        name="llm7", model_id="gpt-5.6-terra", max_tokens=8192,
+        # $0.50 in / $2.00 out
+    ),
+    "llm7-grok-4.5": ProviderConfig(
+        name="llm7", model_id="grok-4.5", max_tokens=8192,
+        # $0.30 in / $1.00 out
+    ),
+    "llm7-grok-4.6": ProviderConfig(
+        name="llm7", model_id="grok-4.6", max_tokens=8192,
+        # $0.40 in / $0.50 out
+    ),
+    "llm7-minimax-m2.7": ProviderConfig(
+        name="llm7", model_id="minimax-m2.7", max_tokens=8192,
+        # $0.03 in / $0.05 out
+    ),
+    "llm7-mistral-nemo": ProviderConfig(
+        name="llm7", model_id="mistral-Nemo-Instruct-2407", max_tokens=8192,
+        # $0.03 in / $0.03 out
+    ),
+    "llm7-mistral-small-24b": ProviderConfig(
+        name="llm7", model_id="mistral-Small-24B-Instruct-2501", max_tokens=8192,
+        # $0.06 in / $0.08 out
+    ),
+    "llm7-seed-2.0-mini": ProviderConfig(
+        name="llm7", model_id="seed-2.0-mini", max_tokens=8192,
+        # $0.10 in / $0.40 out
+    ),
 }
 
 

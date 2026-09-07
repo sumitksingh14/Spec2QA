@@ -275,6 +275,9 @@ export default function StoryInput() {
                 <optgroup label="NVIDIA">
                   <option value="nvidia">NVIDIA — Nemotron-3 Ultra 550B</option>
                 </optgroup>
+                <optgroup label="LLM7">
+                  <option value="llm7">LLM7 — Default (Free, llm7.io)</option>
+                </optgroup>
               </select>
             </div>
           </div>

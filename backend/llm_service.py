@@ -48,6 +48,8 @@ FALLBACK_LLM_PROVIDER = os.getenv("FALLBACK_LLM_PROVIDER", "")  # Feature 13
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
+LLM7_API_KEY = os.getenv("LLM7_API_KEY", "dNmGgjlsUNzVyxfJ4qV9Cfo1yDUgzY4zx7d8HGEyGDg4Yj/9hlpKDSFl/TdRFnu7adE6aBmLL4qhRquu490PU4A62tPbr/rEiO6H1GmXeikwsw9AR4Yk6dTP7bWSfOkKdCMDbHjMx+RoNlgwQND+")
+LLM7_BASE_URL = "https://api.llm7.io/v1"
 
 TOTAL_CASE_CAP: int = 25         # Fixed product decision — never change
 CATEGORY_MIN: int = 1            # Minimum slots per applicable category
@@ -132,6 +134,12 @@ _PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
         model_id="allam-2-7b",
         max_tokens=4000,
         is_draft=True,
+    ),
+    # LLM7 — free OpenAI-compatible endpoint (llm7.io)
+    "llm7": ProviderConfig(
+        name="llm7",
+        model_id="default",
+        max_tokens=8192,
     ),
 }
 
@@ -338,6 +346,11 @@ def _get_client(provider: str) -> Any:
             print("[llm_service] NVIDIA_API_KEY not set — AI generation unavailable.")
             return None
         return OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
+    elif actual == "llm7":
+        if not LLM7_API_KEY:
+            print("[llm_service] LLM7_API_KEY not set — AI generation unavailable.")
+            return None
+        return OpenAI(base_url=LLM7_BASE_URL, api_key=LLM7_API_KEY)
     else:
         if not GROQ_API_KEY:
             print("[llm_service] GROQ_API_KEY not set — AI generation unavailable.")
@@ -354,7 +367,8 @@ def _build_completion_kwargs(cfg: ProviderConfig, messages: list, temperature: f
         "top_p": 0.95,
         "stream": True,
     }
-    if cfg.name == "nvidia":
+    if cfg.name in ("nvidia", "llm7"):
+        # These providers use the standard OpenAI `max_tokens` parameter
         kwargs["max_tokens"] = cfg.max_tokens
     else:
         kwargs["max_completion_tokens"] = cfg.max_tokens

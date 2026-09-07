@@ -275,38 +275,12 @@ export default function StoryInput() {
                 <optgroup label="NVIDIA">
                   <option value="nvidia">NVIDIA — Nemotron-3 Ultra 550B</option>
                 </optgroup>
-                <optgroup label="── LLM7 · Budget / Fast ──">
-                  <option value="llm7-deepseek-v4-flash-0731">LLM7 · DeepSeek-V4-Flash-0731 ($0.02/$0.04 per 1M)</option>
-                  <option value="llm7-l3-8b-lunaris">LLM7 · L3-8B Lunaris v1 Turbo ($0.04/$0.05 per 1M)</option>
-                  <option value="llm7-gemini-3.1-flash-lite">LLM7 · Gemini 3.1 Flash Lite ($0.02/$0.04 per 1M)</option>
-                  <option value="llm7-gemma4-31b">LLM7 · Gemma4 31B ($0.03/$0.08 per 1M)</option>
-                  <option value="llm7-gemini-3-flash">LLM7 · Gemini 3 Flash ($0.03/$0.08 per 1M)</option>
-                  <option value="llm7-codestral-latest">LLM7 · Codestral Latest ($0.01/$0.02 per 1M)</option>
-                  <option value="llm7-mistral-nemo">LLM7 · Mistral Nemo Instruct 2407 ($0.03/$0.03 per 1M)</option>
-                  <option value="llm7-minimax-m2.7">LLM7 · MiniMax M2.7 ($0.03/$0.05 per 1M)</option>
-                  <option value="llm7">LLM7 · Default (llm7.io)</option>
-                </optgroup>
-                <optgroup label="── LLM7 · Balanced ──">
-                  <option value="llm7-mistral-small-24b">LLM7 · Mistral Small 24B Instruct ($0.06/$0.08 per 1M)</option>
-                  <option value="llm7-gemini-3.7-flash">LLM7 · Gemini 3.7 Flash ($0.06/$0.30 per 1M)</option>
-                  <option value="llm7-gemini-3.8-flash-high">LLM7 · Gemini 3.8 Flash High ($0.05/$0.15 per 1M)</option>
-                  <option value="llm7-deepseek-v4-flash-v2">LLM7 · DeepSeek-V4-Flash:0731 ($0.08/$0.16 per 1M)</option>
-                  <option value="llm7-seed-2.0-mini">LLM7 · Seed 2.0 Mini ($0.10/$0.40 per 1M)</option>
-                  <option value="llm7-glm-5.3-flash">LLM7 · GLM-5.3 Flash ($0.15/$0.55 per 1M)</option>
-                  <option value="llm7-claude-haiku-4-5">LLM7 · Claude Haiku 4-5 ($0.04/$0.20 per 1M)</option>
-                </optgroup>
-                <optgroup label="── LLM7 · Premium ──">
-                  <option value="llm7-gpt-5.5-compact">LLM7 · GPT-5.5 OpenAI Compact ($0.20/$1.20 per 1M)</option>
-                  <option value="llm7-inkling-small">LLM7 · Inkling Small ($0.50/$1.20 per 1M)</option>
-                  <option value="llm7-gpt-5.6-luna">LLM7 · GPT-5.6 Luna ($0.30/$1.80 per 1M)</option>
-                  <option value="llm7-claude-sonnet-4-6">LLM7 · Claude Sonnet 4-6 ($0.12/$0.45 per 1M)</option>
-                  <option value="llm7-deepseek-v4-pro">LLM7 · DeepSeek-V4-Pro ($0.37/$0.74 per 1M)</option>
-                  <option value="llm7-grok-4.5">LLM7 · Grok 4.5 ($0.30/$1.00 per 1M)</option>
-                  <option value="llm7-grok-4.6">LLM7 · Grok 4.6 ($0.40/$0.50 per 1M)</option>
-                  <option value="llm7-mimo-v2.5">LLM7 · XiaomiMiMo MiMo-V2.5 ($0.40/$2.00 per 1M)</option>
-                  <option value="llm7-glm-5.3">LLM7 · GLM-5.3 ($0.50/$2.00 per 1M)</option>
-                  <option value="llm7-gpt-5.6-terra">LLM7 · GPT-5.6 Terra ($0.50/$2.00 per 1M)</option>
-                  <option value="llm7-claude-sonnet-5">LLM7 · Claude Sonnet 5 ($0.45/$2.25 per 1M)</option>
+                <optgroup label="── LLM7 · Turbo Models ──">
+                  <option value="llm7-codestral-latest">LLM7 · Codestral Latest — $0.01/$0.02 · 32K ctx · tools</option>
+                  <option value="llm7-mistral-nemo">LLM7 · Mistral Nemo Instruct 2407 — $0.03/$0.03 · 128K ctx</option>
+                  <option value="llm7-minimax-m2.7">LLM7 · MiniMax M2.7 — $0.03/$0.05 · 180K ctx · reasoning</option>
+                  <option value="llm7-gemma4-31b">LLM7 · Gemma4 31B — $0.03/$0.08 · 262K ctx · tools</option>
+                  <option value="llm7-deepseek-v4-flash-0731">LLM7 · DeepSeek-V4-Flash-0731 — $0.02/$0.04 · 400K ctx · reasoning</option>
                 </optgroup>
               </select>
             </div>

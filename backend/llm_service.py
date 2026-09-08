@@ -48,7 +48,7 @@ FALLBACK_LLM_PROVIDER = os.getenv("FALLBACK_LLM_PROVIDER", "")  # Feature 13
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 NVIDIA_API_KEY = os.getenv("NVIDIA_API_KEY")
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
-LLM7_API_KEY = os.getenv("LLM7_API_KEY", "dNmGgjlsUNzVyxfJ4qV9Cfo1yDUgzY4zx7d8HGEyGDg4Yj/9hlpKDSFl/TdRFnu7adE6aBmLL4qhRquu490PU4A62tPbr/rEiO6H1GmXeikwsw9AR4Yk6dTP7bWSfOkKdCMDbHjMx+RoNlgwQND+")
+LLM7_API_KEY = os.getenv("LLM7_API_KEY")
 LLM7_BASE_URL = "https://api.llm7.io/v1"
 
 TOTAL_CASE_CAP: int = 25         # Fixed product decision — never change

@@ -128,6 +128,21 @@ _PROVIDER_CONFIGS: Dict[str, ProviderConfig] = {
         model_id="allam-2-7b",
         max_tokens=4000,
     ),
+    "anthropic-opus": ProviderConfig(
+        name="anthropic",
+        model_id="claude-3-opus-20240229",
+        max_tokens=4000,
+    ),
+    "anthropic-sonnet": ProviderConfig(
+        name="anthropic",
+        model_id="claude-3-5-sonnet-latest",
+        max_tokens=8192,
+    ),
+    "anthropic-haiku": ProviderConfig(
+        name="anthropic",
+        model_id="claude-3-5-haiku-latest",
+        max_tokens=4000,
+    ),
     # Draft mode — fast preview via groq smaller model
     "draft": ProviderConfig(
         name="groq",
@@ -382,7 +397,14 @@ def _get_client(provider: str) -> Any:
     """Return an LLM client based on the given provider name."""
     # Normalise: "draft" routes through groq
     actual = "groq" if provider == "draft" else provider
-    if actual == "nvidia":
+    if actual == "anthropic":
+        anthropic_token = os.getenv("ANTHROPIC_AUTH_TOKEN")
+        anthropic_base = os.getenv("ANTHROPIC_BASE_URL", "https://api-router.opustokens.workers.dev")
+        if not anthropic_token:
+            print("[llm_service] ANTHROPIC_AUTH_TOKEN not set — AI generation unavailable.")
+            return None
+        return OpenAI(base_url=anthropic_base, api_key=anthropic_token)
+    elif actual == "nvidia":
         if not NVIDIA_API_KEY:
             print("[llm_service] NVIDIA_API_KEY not set — AI generation unavailable.")
             return None
@@ -408,7 +430,7 @@ def _build_completion_kwargs(cfg: ProviderConfig, messages: list, temperature: f
         "top_p": 0.95,
         "stream": True,
     }
-    if cfg.name in ("nvidia", "llm7"):
+    if cfg.name in ("nvidia", "llm7", "anthropic"):
         # These providers use the standard OpenAI `max_tokens` parameter
         kwargs["max_tokens"] = cfg.max_tokens
     else:

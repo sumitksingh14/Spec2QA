@@ -275,6 +275,11 @@ export default function StoryInput() {
                 <optgroup label="NVIDIA">
                   <option value="nvidia">NVIDIA — Nemotron-3 Ultra 550B</option>
                 </optgroup>
+                <optgroup label="Anthropic">
+                  <option value="anthropic-sonnet">Anthropic — Claude 3.5 Sonnet</option>
+                  <option value="anthropic-opus">Anthropic — Claude 3 Opus</option>
+                  <option value="anthropic-haiku">Anthropic — Claude 3.5 Haiku</option>
+                </optgroup>
                 <optgroup label="── LLM7 · Turbo Models ──">
                   <option value="llm7-codestral-latest">LLM7 · Codestral Latest — $0.01/$0.02 · 32K ctx · tools</option>
                   <option value="llm7-mistral-nemo">LLM7 · Mistral Nemo Instruct 2407 — $0.03/$0.03 · 128K ctx</option>
